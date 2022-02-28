@@ -1,3 +1,4 @@
+
 from pytom.basic.files import recenterVolume, naivePDBParser, mmCIFParser
 from pytom.basic.files import read
 # VKJY
@@ -8,15 +9,7 @@ import requests
 from urllib.error import HTTPError
 import numpy as np
 import mrcfile
-# ------------
-# Custom volume generator from pdb, cif.
-# Compact volume generaor is added.
-#
-#
 
-##########################################################################################################################################################################
-#  Section for PDB ID to volume.
-##########################################################################################################################################################################
 def atomList2emCompact(atomList, pixelSize, densityNegative=False, verbose=False):
     """
     atomList2em:
@@ -432,22 +425,3 @@ def wgetPDB2Volume(pdbID, cubeSize): # DEPRECATED
     print("pdb resolution of {} is {}".format(pdbID, pdbPixResolution))
     pdb2em(pdbPath, chain=None, pixelSize=float(pdbPixResolution), cubeSize=cubeSize, fname=volumePath, densityNegative=False, recenter=False)
     return
-
-##########################################################################################################################################################################
-#  Section for Multi particle scenario.
-##########################################################################################################################################################################
-SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
-SHREC2021_1bxn = [ "1bxn" ]
-
-#for pdbID in SHREC2021_1bxn:
-#    wgetPDB2VolumeCompact(pdbID)
-
-import time
-#################### Workspace ##################
-executionStart = time.time()
-
-volume2MRCconverter('/cdata/volumesV/1bxn_200.mrc', '/cdata/mrcs/1bxn_200.mrc', verbose=True)
-
-
-print(f" All of the Jobs completed with elapsed time : {time.time()-executionStart}")
-#################### Program Ended ##############
