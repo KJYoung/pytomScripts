@@ -1,5 +1,9 @@
 from pytom.basic.files import recenterVolume, naivePDBParser, mmCIFParser
 from pytom.basic.files import read
+from pytom.simulation.EMSimulation import simpleSimulation
+from pytom_volume import vol, initSphere
+from pytom.basic.structures import WedgeInfo
+
 # VKJY
 import wget
 import os.path
@@ -92,7 +96,8 @@ def atomList2emCompact(atomList, pixelSize, densityNegative=False, verbose=False
         print("shifts    : ", [shiftX, shiftY, shiftZ])
 
     #################### COMPACT VOLUME ####################
-    volumeCompact = vol(maxValues[0]-minValues[0]+1, maxValues[1]-minValues[1]+1, maxValues[2]-minValues[2]+1)
+    compactX, compactY, compactZ = maxValues[0]-minValues[0], maxValues[1]-minValues[1], maxValues[2]-minValues[2]
+    volumeCompact = vol(compactX+1, compactY+1, compactZ+1)
     # add 1 is crucial, basically
     volumeCompact.setAll(0.0)
 
@@ -125,7 +130,7 @@ def atomList2emCompact(atomList, pixelSize, densityNegative=False, verbose=False
     if densityNegative:
         volumeCompact = volumeCompact * -1
 
-    return volumeCompact
+    return volumeCompact, compactX, compactY, compactZ
 
 def atomList2em(atomList, pixelSize, cubeSize, densityNegative=False):
     """
@@ -214,38 +219,13 @@ def atomList2em(atomList, pixelSize, cubeSize, densityNegative=False):
 
     return volume
 
-def pdb2emCompact(pdbPath, pixelSize, chain=None, densityNegative=False, fname='', recenter=False):
-    """
-    pdb2emCompact: Creates an volume out of a PDB file
-    @param pdbPath: Path to PDB file or PDB id for online download
-    @param pixelSize: The pixel size to convert to 
-    @param cubeSize: Resulting cube size
-    @return: A volume
-    @author: Thomas Hrabe & Luis Kuhn
-    """
-    from math import floor
-    from pytom_volume import vol
-
-    atomList = naivePDBParser(pdbPath, chain)
-
-    vol = atomList2emCompact(atomList, pixelSize, densityNegative)
-
-    if recenter:
-        vol = recenterVolume(vol, densityNegative)
-
-    if fname:
-        vol.write(fname)
-        print("MRC file is written in {}".format(fname))
-
-    else:
-        return vol
-
-def pdb2em(pdbPath, pixelSize, cubeSize, chain=None, densityNegative=False, fname='', recenter=True):
+def pdb2em(pdbPath, pixelSize, cubeSize=0.0, toCompact=False, chain=None, densityNegative=False, fname='', recenter=True):
     """
     pdb2em: Creates an volume out of a PDB file
     @param pdbPath: Path to PDB file or PDB id for online download
     @param pixelSize: The pixel size to convert to 
     @param cubeSize: Resulting cube size
+    @param toCompact: Option for compact cuboid
     @return: A volume
     @author: Thomas Hrabe & Luis Kuhn
     """
@@ -254,47 +234,29 @@ def pdb2em(pdbPath, pixelSize, cubeSize, chain=None, densityNegative=False, fnam
 
     atomList = naivePDBParser(pdbPath, chain)
 
-    vol = atomList2em(atomList, pixelSize, cubeSize, densityNegative)
-
-    if recenter:
-        vol = recenterVolume(vol, densityNegative)
-
-    if fname:
-        vol.write(fname)
-
+    vol = None
+    compactX, compactY, compactZ = 0.0, 0.0, 0.0
+    if toCompact:
+        vol, compactX, compactY, compactZ = atomList2emCompact(atomList, pixelSize, densityNegative)
     else:
-        return vol
+        vol = atomList2em(atomList, pixelSize, cubeSize, densityNegative)
 
-def mmCIF2emCompact(mmCIFPath, pixelSize, chain=None, densityNegative=False, fname='', recenter=False):
-    """
-    mmCIF2emCompact: Creates an compact volume out of a mmCIF file
-    @param mmCIFPath: Path to mmCIF file 
-    @param pixelSize: The pixel size to convert to 
-    @param cubeSize: Resulting cube size
-    @return: A volume
-    """
-    from math import floor
-    from pytom_volume import vol
-
-    atomList = mmCIFParser(mmCIFPath, chain)
-
-    vol = atomList2emCompact(atomList, pixelSize, densityNegative)
-
-    if recenter:
+    if (not toCompact) and recenter:
         vol = recenterVolume(vol, densityNegative)
 
     if fname:
         vol.write(fname)
         print("MRC file is written in {}".format(fname))
-        
-    return vol
 
-def mmCIF2em(mmCIFPath, pixelSize, cubeSize, chain=None, densityNegative=False, fname='', recenter=True):
+    return vol, compactX, compactY, compactZ
+
+def mmCIF2em(mmCIFPath, pixelSize, cubeSize=0.0, toCompact=False, chain=None, densityNegative=False, fname='', recenter=True):
     """
     mmCIF2em: Creates an volume out of a mmCIF file
     @param mmCIFPath: Path to mmCIF file 
     @param pixelSize: The pixel size to convert to 
     @param cubeSize: Resulting cube size
+    @param toCompact: Option for compact cuboid
     @return: A volume
     """
     from math import floor
@@ -302,18 +264,23 @@ def mmCIF2em(mmCIFPath, pixelSize, cubeSize, chain=None, densityNegative=False, 
 
     atomList = mmCIFParser(mmCIFPath, chain)
 
-    vol = atomList2em(atomList, pixelSize, cubeSize, densityNegative)
+    vol = None
+    compactX, compactY, compactZ = 0.0, 0.0, 0.0
+    if toCompact:
+        vol, compactX, compactY, compactZ = atomList2emCompact(atomList, pixelSize, densityNegative)
+    else:
+        vol = atomList2em(atomList, pixelSize, cubeSize, densityNegative)
 
-    if recenter:
+    if (not toCompact) and recenter:
         vol = recenterVolume(vol, densityNegative)
     
     if fname:
         vol.write(fname)
         print(f"MRC file is written in {fname}")
     
-    return vol 
+    return vol, compactX, compactY, compactZ
 
-def volume2MRCconverter(volPath, mrcPath, verbose=False):
+def volume2MRCconverter(volPath, mrcPath, overwrite=False, verbose=False):
     inputVolume = read(volPath)
     x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
     if verbose:
@@ -324,12 +291,12 @@ def volume2MRCconverter(volPath, mrcPath, verbose=False):
             for k in range(inputVolume.sizeZ()):
                 volumeData[i,j,k] = inputVolume.getV(i,j,k)
     
-    with mrcfile.new(mrcPath) as mrc:
+    with mrcfile.new(mrcPath, overwrite=overwrite) as mrc:
         mrc.set_data(volumeData)
         print(f"mrc data dimension is converted to... {mrc.data.shape}")
     return
 
-def wgetPDB2Volume(pdbID, cubeSize=0.0, pdbDir="/cdata/pdbData", volumeDir="/cdata/volumesCompact", mrcDir="/cdata/mrcs", toCompact=False, verbose=False):
+def wgetPDB2Volume(pdbID, cubeSize=0.0, pdbDir="/cdata/pdbData", volumeDir="/cdata/volumesCompact", mrcDir="/cdata/mrcs", toCompact=False, generateMRC=False, overwrite=False, verbose=False):
     # pdbDir should not include dangling /
     # densityNegative for default
     if verbose:
@@ -362,12 +329,10 @@ def wgetPDB2Volume(pdbID, cubeSize=0.0, pdbDir="/cdata/pdbData", volumeDir="/cda
 
         cifPixResolution = re.findall(resPatternCIF, cifContent)[0]
         print("cif resolution of {} is {}".format(pdbID, cifPixResolution))
-        if toCompact:
-            volume = mmCIF2emCompact(cifPath, chain=None, pixelSize=float(cifPixResolution), densityNegative=False, recenter=False)
-        else:
-            volume = mmCIF2em(cifPath, chain=None, pixelSize=float(cifPixResolution), cubeSize=cubeSize, densityNegative=False, recenter=True)
-        volume.write(volumePath)
-        return
+        _vol, compactX, compactY, compactZ = mmCIF2em(cifPath, pixelSize=float(cifPixResolution), cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=volumePath, densityNegative=False, recenter=True)
+        if generateMRC:
+            volume2MRCconverter(volumePath, mrcPath, overwrite=overwrite)
+        return compactX, compactY, compactZ
     if not templateExists:
         wget.download(pdbURL, out=pdbPath)
     resPatternPDB = re.compile("RESOLUTION\..*([0-9]+\.[0-9]+).*ANGSTROMS")
@@ -378,76 +343,112 @@ def wgetPDB2Volume(pdbID, cubeSize=0.0, pdbDir="/cdata/pdbData", volumeDir="/cda
 
     pdbPixResolution = re.findall(resPatternPDB, pdbContent)[0]
     print("pdb resolution of {} is {}".format(pdbID, pdbPixResolution))
-    if toCompact:
-        pdb2emCompact(pdbPath, chain=None, pixelSize=float(pdbPixResolution), fname=volumePath, densityNegative=False, recenter=False)
-    else:
-        pdb2em(pdbPath, chain=None, pixelSize=float(pdbPixResolution), cubeSize=cubeSize, fname=volumePath, densityNegative=False, recenter=True)
-    return
-
-def wgetPDB2Volume(pdbID, cubeSize): # DEPRECATED
-    # densityNegative for default
-    print("wgetPDB2Volume is working with PDBID : {} and cubeSize : {}".format(pdbID, cubeSize))
-    pdbPath = "/cdata/pdbData/{}.pdb".format(pdbID)
-    cifPath = "/cdata/pdbData/{}.cif".format(pdbID)
-    
-    pdbURL = "https://files.rcsb.org/view/{}.pdb".format(pdbID)
-    cifURL = "https://files.rcsb.org/view/{}.cif".format(pdbID)
-    
-    volumePath = "/cdata/volumesV/{}_{}.vol".format(pdbID, cubeSize)
-
-    templateExists = False
-
-    if os.path.isfile(pdbPath) or os.path.isfile(cifPath):
-        # print("pdb File with ID {} is already exists! Returned.".format(pdbID));
-        templateExists = True    
-
-    response = requests.get(pdbURL)
-    if not response.status_code == 200:
-        response = requests.get(cifURL)
-        if not response.status_code == 200:
-            print("Invalid pdb ID maybe.")
-            return
-        if not templateExists:
-            wget.download(cifURL, out=cifPath)
-        resPatternCIF = re.compile("_em_3d_reconstruction.resolution +([0-9]+\.[0-9]+)")
-
-        f = open(cifPath, 'r')
-        cifContent = f.read()
-        f.close()
-
-        cifPixResolution = re.findall(resPatternCIF, cifContent)[0]
-        print("cif resolution of {} is {}".format(pdbID, cifPixResolution))
-        volume = mmCIF2em(cifPath, chain=None, pixelSize=float(cifPixResolution), cubeSize=cubeSize, densityNegative=False)
-        volume.write(volumePath)
-        return
-    if not templateExists:
-        wget.download(pdbURL, out=pdbPath)
-    resPatternPDB = re.compile("RESOLUTION\..*([0-9]+\.[0-9]+).*ANGSTROMS")
-    
-    f = open(pdbPath, 'r')
-    pdbContent = f.read()
-    f.close()
-
-    pdbPixResolution = re.findall(resPatternPDB, pdbContent)[0]
-    print("pdb resolution of {} is {}".format(pdbID, pdbPixResolution))
-    pdb2em(pdbPath, chain=None, pixelSize=float(pdbPixResolution), cubeSize=cubeSize, fname=volumePath, densityNegative=False, recenter=False)
-    return
+    _vol, compactX, compactY, compactZ = pdb2em(pdbPath, pixelSize=float(pdbPixResolution), cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=volumePath, densityNegative=False, recenter=True)
+    if generateMRC:
+        volume2MRCconverter(volumePath, mrcPath, overwrite=overwrite)
+    return compactX, compactY, compactZ
 
 ##########################################################################################################################################################################
 #  Section for Multi particle scenario.
 ##########################################################################################################################################################################
-SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
+import random
+def makeScenarioByPDBIDs(pdbIDList, cubeSize=512, overwrite=False, verbose=False):
+    # Prepare Volumes.
+    cuboidalOccupancyList = [['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]]]
+    for pdbID in pdbIDList:
+        #x, y, z = wgetPDB2Volume(pdbID, toCompact=True, generateMRC=False, overwrite=overwrite, verbose=verbose)
+        #cuboidalOccupancyList.append([pdbID, [x, y, z]])
+        #if verbose:
+        #    print(f"Volume building with {pdbID} is done...")
+        pass
+    
+    if verbose:
+        print("----------- occupancy List is done... -----------")
+        #print(cuboidalOccupancyList)
+    failedAttempts = 0
+    particleNum = 0
+    scenario = []
+    while failedAttempts < 2000000 and particleNum < 200000:
+        if verbose and failedAttempts%500000 == 0:
+            print(f"... Now failed Attemps are {failedAttempts}")   
+        classNum = random.randint(0, len(cuboidalOccupancyList)-1)
+        classOccpy = cuboidalOccupancyList[classNum]
+        x, y, z = random.randint(0, cubeSize-1-classOccpy[1][0]), random.randint(0, cubeSize-1-classOccpy[1][1]), random.randint(0, cubeSize-1-classOccpy[1][2])
+        
+        if len(scenario) == 0:
+            scenario.append([classNum, [x,y,z], classOccpy[1]])
+            particleNum+=1
+        else:
+            for existingItem in scenario:
+                if (x <= existingItem[1][0]+existingItem[2][0] and x+classOccpy[1][0] >= existingItem[1][0]) and \
+                    (y <= existingItem[1][1]+existingItem[2][1] and y+classOccpy[1][1] >= existingItem[1][1]) and \
+                    (z <= existingItem[1][2]+existingItem[2][2] and z+classOccpy[1][2] >= existingItem[1][2]):
+                    failedAttempts+=1
+                    break; 
+                if existingItem == scenario[-1]:
+                    scenario.append([classNum, [x, y, z], classOccpy[1]])
+                    particleNum+=1
+    
+    print(f"----------- Scenario generation is done... with Particle Number {particleNum}----------")
+    # print(scenario)
+    # [[0, [305, 116, 185], [46, 32, 38]], [3, [404, 398, 234], [34, 69, 67]], [3, [158, 219, 313], [34, 69, 67]], [4, [31, 471, 392], [31, 36, 44]], [7, [215, 168, 1], [45, 41, 54]], [1, [445, 347, 63], [39, 32, 37]], [2, [75, 46, 145], [41, 34, 27]], [2, [361, 299, 102], [41, 34, 27]], [5, [267, 6, 446], [25, 36, 21]], [1, [118, 81, 469], [39, 32, 37]]]
+
+    volume = vol(cubeSize, cubeSize, cubeSize)
+    volume.setAll(0.0)
+
+    for items in scenario:
+        particleVol = read(f"/cdata/volumesCompact/{cuboidalOccupancyList[items[0]][0]}.vol")
+        x, y, z = particleVol.sizeX(), particleVol.sizeY(), particleVol.sizeZ()
+        for i in range(x):
+            for j in range(y):
+                for k in range(z):
+                    if volume.getV(items[1][0]+i, items[1][1]+j, items[1][2]+k) != 0:
+                        print("ERROR : PARTICLE OVERAPPED!")
+                        print(f"debug information : {items}")
+                    volume.setV( particleVol.getV(i,j,k), items[1][0]+i, items[1][1]+j, items[1][2]+k)
+        
+        # with mrcfile.new(mrcPath, overwrite=overwrite) as mrc:
+        #     mrc.set_data(volumeData)
+        #     print(f"mrc data dimension is converted to... {mrc.data.shape}")
+        # return
+        # COPY
+    
+    volume.write("/cdata/tempMulti3.vol")
+    #END
+
+##########################################################################################################################################################################
+#  Section for Simulation.
+
+def customSimulation(volumePath, simulatedPath, snrValue, rotation=None, wedgeAngle=None, shift=None):
+    wedge = 0.0
+    shiftList = [0, 0, 0]
+
+    v = read(volumePath)
+    if rotation == None:
+        rotation = [0, 0, 0]
+    if not wedgeAngle == None:
+        wedge = wedgeAngle
+    if not shift == None:
+        shiftList = shift
+    
+    wi = WedgeInfo(wedgeAngle=wedge, cutoffRadius=0.0)
+    s = simpleSimulation( volume=v, rotation=rotation, shiftV=shiftList, wedgeInfo=wi, SNR=snrValue)
+    s.write(simulatedPath)
+##########################################################################################################################################################################
+# SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
+SHREC2021_FULLexc2L2S = [ "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr" ]
 SHREC2021_1bxn = [ "1bxn" ]
 
 #for pdbID in SHREC2021_1bxn:
-#    wgetPDB2VolumeCompact(pdbID)
+#    wgetPDB2Volume(pdbID)
 
 import time
 #################### Workspace ##################
 executionStart = time.time()
 
-volume2MRCconverter('/cdata/volumesV/1bxn_200.mrc', '/cdata/mrcs/1bxn_200.mrc', verbose=True)
-
-
+#volume2MRCconverter('/cdata/volumesV/1bxn_200.mrc', '/cdata/mrcs/1bxn_200.mrc', verbose=True)
+#wgetPDB2Volume('1bxn', toCompact=True, generateMRC=True, verbose=True)
+#makeScenarioByPDBIDs(SHREC2021_FULLexc2L2S, overwrite=True, verbose=True)
+customSimulation("/cdata/simulated_naive_t3_1626.vol", "/cdata/simulatied_naive_t3_SIM.vol", 0.05, rotation=[20,30,70], wedgeAngle=70)
 print(f" All of the Jobs completed with elapsed time : {time.time()-executionStart}")
 #################### Program Ended ##############
