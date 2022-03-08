@@ -13,6 +13,8 @@ from urllib.error import HTTPError
 import numpy as np
 import mrcfile
 import math 
+import random
+import time
 # ------------
 # Custom volume generator from pdb, cif.
 # Compact volume generaor is added.
@@ -25,6 +27,12 @@ singleParticleEMCuboidDIR = f"{rootDIR}/singleParticleEM_cuboid"
 singleParticleEMCubeDIR = f"{rootDIR}/singleParticleEM_cube"
 singleParticleMRCCuboidDIR = f"{rootDIR}/singleParticleMRC_cuboid"
 scenarioDIR = f"{rootDIR}/scenario"
+metadataFILE = f"{rootDIR}/metadata.txt"
+
+def appendMetaDataln(metadata):
+    fmeta = open(metadataFILE, "a")
+    fmeta.write(metadata + "\n")
+    fmeta.close()
 ##########################################################################################################################################################################
 #  Section for PDB ID to volume.
 ##########################################################################################################################################################################
@@ -80,7 +88,7 @@ def atomList2emCube(atomList, pixelSize, densityNegative=False, resolutionFactor
     compactX, compactY, compactZ = maxValues[0]-minValues[0], maxValues[1]-minValues[1], maxValues[2]-minValues[2]
     cubeSize = int(sqrt( compactX**2 + compactY**2 + compactZ**2 ))
     if cubeSize % 2 == 0:
-        cubeSize += 1 # Let cubesize to be odd.
+        cubeSize += 1 # Let cubeSize to be odd.
     
     volumeCompact = vol(cubeSize, cubeSize, cubeSize)
 
@@ -483,40 +491,34 @@ def makeCompact(inputVolume):
 ##########################################################################################################################################################################
 #  Section for Multi particle scenario.
 ##########################################################################################################################################################################
-import random
-def occupancyCalculator(pdbIDList, pdbDir, volumeDir, mrcDir, overwrite=False, verbose=False):
-    cuboidalOccupancyList = []
-    for pdbID in pdbIDList:
-        _vol, x, y, z = wgetPDB2Volume(pdbID, pdbDir=pdbDir, volumeDir=volumeDir, mrcDir=mrcDir, toCompact=True, generateMRC=False, overwrite=overwrite, verbose=verbose)
-        cuboidalOccupancyList.append([pdbID, [x, y, z]])
-        if verbose:
-            print(f"Volume building with {pdbID} is done...")
-    return cuboidalOccupancyList
-# [['1s3x', [34, 31, 28]], ['3qm1', [23, 32, 22]], ['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]], ['4cr2', [36, 27, 27]], ['5mrc', [95, 86, 74]]]
-
-
-def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", cubeSize=128, overwrite=False, verbose=False):
-    # Prepare Volumes.
+def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", cubeSize=128, pfailedAttempts=9000, pparticleNum=1600, overwrite=False, isRotation=False, verbose=False):
     # cuboidalOccupancyList = [['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]]]
+    startTime = time.time()
     scenarioMetaDataFile = f"{scenarioDir}/{scenarioIdentifier}.txt"
     scenarioVolumeFile = f"{scenarioDir}/{scenarioIdentifier}.em"
 
     f = open(scenarioMetaDataFile, 'w')
-    volume = vol(2*cubeSize, 2*cubeSize, cubeSize)
+    fulltomX, fulltomY, fulltomZ = 2*cubeSize, 2*cubeSize, 2*cubeSize
+    volume = vol(fulltomX, fulltomY, fulltomZ)
     volume.setAll(0.0)
     
     failedAttempts = 0
     particleNum = 0
     scenario = []
-    while failedAttempts < 120000 and particleNum < 1600:
-        if verbose and failedAttempts%30000 == 0:
+    while failedAttempts < pfailedAttempts and particleNum < pparticleNum:
+        if verbose and failedAttempts%300 == 0:
             print(f"... Now failed Attemps are {failedAttempts}")   
         classNum = random.randint(0, len(pdbIDList)-1) #TODO NUMPY.
         currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
         currentVol = read(currentTemplate)
-        rotatedVol, phi, theta, psi = compactRandomRotation(currentVol)
+
+        if isRotation == True:
+            rotatedVol, phi, theta, psi = compactRandomRotation(currentVol)
+        else:
+            rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
+
         sizeX, sizeY, sizeZ = rotatedVol.sizeX(), rotatedVol.sizeY(), rotatedVol.sizeZ()
-        x, y, z = random.randint(0, cubeSize-1-sizeX), random.randint(0, cubeSize-1-sizeY), random.randint(0, cubeSize-1-sizeZ)
+        x, y, z = random.randint(0, fulltomX-1-sizeX), random.randint(0, fulltomY-1-sizeY), random.randint(0, fulltomZ-1-sizeZ)
         centerX, centerY, centerZ = x+ sizeX/2, y+ sizeY/2, z+ sizeZ/2
         
         if len(scenario) == 0:
@@ -553,10 +555,16 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
                         print(f"... Particle Num : {particleNum}")  
     
     f.close()
+
+    # --- META DATA ---
+    appendMetaDataln(f"makeScenarioByPDBIDs {scenarioIdentifier} done - time elapsed : {time.time() - startTime}s")
+    appendMetaDataln(f"-output file : {scenarioVolumeFile}, cubeSize : {fulltomX}x{fulltomY}x{fulltomZ}")
+    appendMetaDataln(f"-with pdbIDList : {pdbIDList}")
+    appendMetaDataln(f"-failedAttempts : {pfailedAttempts}, resultParticleNum : {particleNum}")
+
     print(f"----------- Scenario generation is done... with Particle Number {particleNum}----------")
-    # print(scenario)
+    # -----------------
     volume.write(scenarioVolumeFile)
-    #END
 
 ##########################################################################################################################################################################
 #  Section for Simulation.
@@ -586,6 +594,9 @@ def customSimulation(volumePath, simulatedPath=None, snrValue=0.1, rotation=None
     s = simpleSimulation( volume=v, rotation=rotation, shiftV=shiftList, wedgeInfo=wi, SNR=snrValue)
     if simulatedPath:
         s.write(simulatedPath)
+    
+    appendMetaDataln(f"customSimulation is done : inputfile is {volumePath} / outputfile is {simulatedPath}")
+    appendMetaDataln(f"-snr : {snrValue}, rotation : {rotation}, wedgeAngle : {wedgeAngle}, shift : {shift}")
     return s
 
 ##########################################################################################################################################################################
@@ -608,35 +619,6 @@ def matrixToVolLayerX(vol, matrix, xheight):
             vol.setV(matrix[i][j], i, j, xheight)
     return vol
 
-def syntheticGen1(outputPath):
-    volume = vol(64, 64, 64)
-    volume.setAll(0.0)
-    for i in range(64):
-        volume.setV(20, 32, 32, i)
-
-        volume.setV(20, i, 32, 32)
-        volume.setV(20, i, 31, 31)
-        volume.setV(20, i, 33, 33)
-
-        volume.setV(20, 32, i, 32)
-        volume.setV(20, 29, i, 29)
-        volume.setV(20, 35, i, 35)
-    
-    mat = np.zeros([64, 64])
-    for i in range(64):
-        mat[i][i] = 20
-    matrixToVolLayerX(volume, mat, 40)
-    volume.write(outputPath)
-
-def getWeightedSum(inputVolume):
-    x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
-    sumOfPoints = 0
-    for i in range(x):
-        for j in range(y):
-            for k in range(z):
-                sumOfPoints += inputVolume.getV(i,j,k)    
-    return sumOfPoints
-
 def compactCuboid2rotateCube(cuboidPath, cubePath):
     cuboid = read(cuboidPath)
     x, y, z = cuboid.sizeX(), cuboid.sizeY(), cuboid.sizeZ()
@@ -650,127 +632,50 @@ def compactCuboid2rotateCube(cuboidPath, cubePath):
                 cube.setV( cuboid.getV(i, j, k), i+sx, j+sy, k+sz )
     cube.write(cubePath)
 
-def rotationIntegrityTest2(volumePath):
-    em = read(volumePath)
-    angles = range(0, 360, 20)
-    f = open("/cdata/0305/rotateIntegrity_cube.txt", 'w')
-    for angleX in angles:
-        print(f"angleX : {angleX} is started...")
-        for angleY in angles:
-            print(f"--angleY : {angleY} is started...")
-            for angleZ in angles:
-                from pytom_volume import rotate
-                rotatedCopy = vol(em.sizeX(),em.sizeY(),em.sizeZ())
-                rotatedCopy.setAll(0.0)
-                rotate(em, rotatedCopy, angleX, angleY, angleZ)
-                compactRotated = makeCompact(rotatedCopy)
-                result = getWeightedSum(compactRotated)
-                f.write(f"{angleX},{angleY},{angleZ},{compactRotated.sizeX()},{compactRotated.sizeY()},{compactRotated.sizeZ()},{result}\n")
-    f.close()
-
-def randomRotationAndCompact(pdbID, volumeDir, rotationDir, overwrite=False, iter=1):
-    rotList = []
-    for i in range(iter):
-        phi, theta, psi = np.random.randint(low=0, high=360, size=(3,))
-        print(type(phi), phi, theta, psi)
-        volumePath = f"{volumeDir}/{pdbID}.em"
-        rotPath = f"{rotationDir}/{pdbID}_{phi}_{theta}_{psi}.em"
-        comPath = f"{rotationDir}/compact/{pdbID}_{phi}_{theta}_{psi}.em"
-        em = read(volumePath)
-        from pytom_volume import rotate
-        rotatedCopy = vol(em.sizeX(),em.sizeY(),em.sizeZ())
-        rotatedCopy.setAll(0.0)
-        rotate(em, rotatedCopy, int(phi), int(theta), int(psi))
-        rotatedCopy.write(rotPath)
-        comp = makeCompact(rotatedCopy)
-        comp.write(comPath)
-        rotList.append(comp)
-    return rotList
-
-def volumeOutliner(inputVolume):
+def volumeOutliner(inputVolume, outlineValue=10):
     x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
     for i in range(x):
-        inputVolume.setV(10, i, 0,0)
-        inputVolume.setV(10, i, y-1,0)
-        inputVolume.setV(10, i, 0,z-1)
-        inputVolume.setV(10, i, y-1,z-1)
+        inputVolume.setV(outlineValue, i, 0,0)
+        inputVolume.setV(outlineValue, i, y-1,0)
+        inputVolume.setV(outlineValue, i, 0,z-1)
+        inputVolume.setV(outlineValue, i, y-1,z-1)
     for i in range(y):
-        inputVolume.setV(10, 0, i,0)
-        inputVolume.setV(10, x-1, i,0)
-        inputVolume.setV(10, 0, i,z-1)
-        inputVolume.setV(10, x-1, i,z-1)
+        inputVolume.setV(outlineValue, 0, i,0)
+        inputVolume.setV(outlineValue, x-1, i,0)
+        inputVolume.setV(outlineValue, 0, i,z-1)
+        inputVolume.setV(outlineValue, x-1, i,z-1)
     for i in range(z):
-        inputVolume.setV(10, 0, 0,i)
-        inputVolume.setV(10, x-1, 0,i)
-        inputVolume.setV(10, 0, y-1,i)
-        inputVolume.setV(10, x-1, y-1,i)
+        inputVolume.setV(outlineValue, 0, 0,i)
+        inputVolume.setV(outlineValue, x-1, 0,i)
+        inputVolume.setV(outlineValue, 0, y-1,i)
+        inputVolume.setV(outlineValue, x-1, y-1,i)
     return inputVolume
-
-def rotationIntegrityTest1(volumePath): #1bxn 45 45 37
-    em = read(volumePath)
-    #print(em.sizeX(),em.sizeY(),em.sizeZ())
-    angles = range(0, 360, 20)
-    f = open("/cdata/0305/rotateIntegrity_cuboid.txt", 'w')
-    for angleX in angles:
-        print(f"angleX : {angleX} is started...")
-        for angleY in angles:
-            print(f"--angleY : {angleY} is started...")
-            for angleZ in angles:
-                from pytom_volume import rotate
-                rotatedCopy = vol(em.sizeX(),em.sizeY(),em.sizeZ())
-                rotatedCopy.setAll(0.0)
-                rotate(em, rotatedCopy, angleX, angleY, angleZ)
-                result = getWeightedSum(rotatedCopy)
-                f.write(f"{angleX},{angleY},{angleZ},{result}\n")
-    f.close()
 ##########################################################################################################################################################################
 SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
 SHREC2021_FULL_OCCLIST = [['1s3x', [34, 31, 28]], ['3qm1', [23, 32, 22]], ['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]], ['4cr2', [36, 27, 27]], ['5mrc', [95, 86, 74]]]
 SHREC2021_FULLexc2L2S = [ "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr" ]
 SHREC2021_1bxn = [ "1bxn" ]
 
-#for pdbID in SHREC2021_1bxn:
-#    wgetPDB2Volume(pdbID)
 if __name__ == "__main__":
-    import time
-    #################### Workspace ##################
-    f = open('/cdata/time.txt', 'w')
     executionStart = time.time()
+    #################### Workspace ##################    
+    now = time.localtime()
+    programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
+    appendMetaDataln(f"=> Scripts running : {programTime}")
+    # Put some description.
+    DESCRIPTION = "Making test tomogram for Luna 1."
+    appendMetaDataln(f"=> {DESCRIPTION}")
 
-    #volume2MRCconverter('/cdata/volumesV/1bxn_200.mrc', '/cdata/mrcs/1bxn_200.mrc', verbose=True)
-    #wgetPDB2Volume('1bxn', toCompact=True, generateMRC=True, verbose=True)
-    dateDir = "/cdata/0305"
-
-    # Rotation integrity Test
-    #wgetPDB2Volume('1bxn', pdbDir=pdbDataDIR, volumeDir=singleParticleEMCuboidDIR, mrcDir=None, toCompact=True, overwrite=True, verbose=True)
-    #compactCuboid2rotateCube("/cdata/singleParticleEM_cuboid/1bxn.em", "/cdata/singleParticleEM_cube/1bxn.em")
     
-    # 01 # volList = prepareCubeVolumes(SHREC2021_FULL, pdbDir=pdbDataDIR, volumeDir=singleParticleEMCubeDIR, mrcDir=None, toCompact=True, overwrite=True, verbose=True)
-    ###### get Cube volume(.em) files by PDB ID List.
-    #def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", cubeSize=128, overwrite=False, verbose=False):
+    # 01 Work : Just test tomogram without rotation. #######################################################################
+    # makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="1_withoutrotation", cubeSize=256, pfailedAttempts=4000, isRotation=False, verbose=True)
+    # makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="2_withoutrotation", cubeSize=256, pfailedAttempts=4000, isRotation=False, verbose=True)
+    # customSimulation("/cdata/scenario/1_withoutrotation.em", simulatedPath="/cdata/simulated/1_withoutrotation.em", snrValue=2.0)
+    # customSimulation("/cdata/scenario/2_withoutrotation.em", simulatedPath="/cdata/simulated/2_withoutrotation.em", snrValue=2.0)
+    # volume2MRCconverter("/cdata/simulated/1_withoutrotation.em", "/cdata/simulated/1_withoutrotation.mrc")
+    # volume2MRCconverter("/cdata/simulated/2_withoutrotation.em", "/cdata/simulated/2_withoutrotation.mrc")
+    ########################################################################################################################
     
-    f.write(f"first job start : {executionStart}\n")
-    makeScenarioByPDBIDs(["1bxn"], volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="only1bxn2", cubeSize=128)
-    firstEnd = time.time()
-    f.wrtie(f"first job end & second start : {firstEnd - executionStart}\n")
-    makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="fulltest", cubeSize=128)
-    f.write(f"second finished : {time.time() - firstEnd}\n")
-    #volList = randomRotationAndCompact("1bxn", volumeDir=singleParticleEMCubeDIR, rotationDir="/cdata/0307/temp_rotation_test", iter=10)
-    f.close()
-    # vol, _x, _y, _z = wgetPDB2Volume('1bxn', pdbDir=pdbDataDIR, volumeDir=singleParticleEMCubeDIR, mrcDir=None, toCompact=True, overwrite=True, verbose=True)
-    # i = 0
-    # for v in volList:
-    #     volumeOutliner(v).write(f"/cdata/outlined/rotation_outlined_{i}.em")
-    #     i+=1
-    #rotationIntegrityTest2("/cdata/singleParticleEM_cube/1bxn.em")
-
-    #syntheticGen1(f'{dateDir}/rotest4X.em')
-    #customSimulation(f'{dateDir}/rotest4X.em', f'{dateDir}/rotest4X_0_0_30.em', 100, rotation=[0,0,30])
-    #customSimulation(f'{dateDir}/rotest4X.em', f'{dateDir}/rotest4X_0_30_0.em', 100, rotation=[0,30,0])
-    #customSimulation(f'{dateDir}/rotest4X.em', f'{dateDir}/rotest4X_30_0_0.em', 100, rotation=[30,0,0])
-
-
-    # makeScenarioByPDBIDs(SHREC2021_FULL, scenarioPATH=scenarioFile, occList=SHREC2021_FULL_OCCLIST, cubeSize=256,overwrite=True, verbose=True)
-    # customSimulation(scenarioFile, simulatedFile, 0.1, wedgeAngle=70)
+    ################### Workspace Ended #############
     print(f" All of the Jobs completed with elapsed time : {time.time()-executionStart}")
     #################### Program Ended ##############
