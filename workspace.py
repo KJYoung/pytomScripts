@@ -29,6 +29,8 @@ singleParticleMRCCuboidDIR = f"{rootDIR}/singleParticleMRC_cuboid"
 scenarioDIR = f"{rootDIR}/scenario"
 metadataFILE = f"{rootDIR}/metadata.txt"
 
+global called
+called =  0
 def appendMetaDataln(metadata):
     fmeta = open(metadataFILE, "a")
     fmeta.write(metadata + "\n")
@@ -505,55 +507,75 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     failedAttempts = 0
     particleNum = 0
     scenario = []
-    while failedAttempts < pfailedAttempts and particleNum < pparticleNum:
-        if verbose and failedAttempts%300 == 0:
-            print(f"... Now failed Attemps are {failedAttempts}")   
-        classNum = random.randint(0, len(pdbIDList)-1) #TODO NUMPY.
-        currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
-        currentVol = read(currentTemplate)
 
+    classNum = np.random.randint(low=0, high=len(pdbIDList)) #TODO NUMPY.
+    currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
+    currentVol = read(currentTemplate)
+    if isRotation == True:
+        rotatedVol, phi, theta, psi = compactRandomRotation(currentVol)
+    else:
+        rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
+
+    sizeX, sizeY, sizeZ = rotatedVol.sizeX(), rotatedVol.sizeY(), rotatedVol.sizeZ()
+    x, y, z = np.random.randint(low=0, high=fulltomX-sizeX), np.random.randint(low=0, high=fulltomY-sizeY), np.random.randint(low=0, high=fulltomZ-sizeZ)
+    centerX, centerY, centerZ = x+ sizeX/2, y+ sizeY/2, z+ sizeZ/2
+    
+    scenario.append([[x,y,z], [x+sizeX-1, y+sizeY-1, z+sizeZ-1]])
+    for i in range(sizeX):
+        for j in range(sizeY):
+            for k in range(sizeZ):
+                volume.setV( rotatedVol.getV(i,j,k), x+i, y+j, z+k)
+    # INCORPORTATE
+    f.write(f"{pdbIDList[classNum]},{centerX},{centerY},{centerZ},{phi},{theta},{psi}\n")
+    particleNum+=1
+    rotatedVol = None
+    rotFailNum = 0
+    while failedAttempts < pfailedAttempts and particleNum < pparticleNum:
+        if verbose and failedAttempts%300 == 0 and failedAttempts != 0:
+            print(f"... Now failed Attemps are {failedAttempts}")   
         if isRotation == True:
-            rotatedVol, phi, theta, psi = compactRandomRotation(currentVol)
+            if rotFailNum == 20:
+                rotatedVol = None
+            if rotatedVol == None:
+                rotFailNum = 0
+                classNum = np.random.randint(low=0, high=len(pdbIDList)) #TODO NUMPY.
+                currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
+                currentVol = read(currentTemplate)
+                rotatedVol, phi, theta, psi = compactRandomRotation(currentVol)
+            else:
+                rotFailNum+=1
         else:
+            classNum = np.random.randint(low=0, high=len(pdbIDList)) #TODO NUMPY.
+            currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
+            currentVol = read(currentTemplate)
             rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
 
         sizeX, sizeY, sizeZ = rotatedVol.sizeX(), rotatedVol.sizeY(), rotatedVol.sizeZ()
-        x, y, z = random.randint(0, fulltomX-1-sizeX), random.randint(0, fulltomY-1-sizeY), random.randint(0, fulltomZ-1-sizeZ)
+        # x, y, z = random.randint(0, fulltomX-1-sizeX), random.randint(0, fulltomY-1-sizeY), random.randint(0, fulltomZ-1-sizeZ)
+        x, y, z = np.random.randint(low=0, high=fulltomX-sizeX), np.random.randint(low=0, high=fulltomY-sizeY), np.random.randint(low=0, high=fulltomZ-sizeZ)
         centerX, centerY, centerZ = x+ sizeX/2, y+ sizeY/2, z+ sizeZ/2
         
-        if len(scenario) == 0:
-            scenario.append([[x,y,z], [x+sizeX-1, y+sizeY-1, z+sizeZ-1]])
+        isOccupied = False
+        for existingItem in scenario:
+            if (x <= existingItem[1][0] and x+sizeX >= existingItem[0][0]) and \
+                (y <= existingItem[1][1] and y+sizeY >= existingItem[0][1]) and \
+                (z <= existingItem[1][2] and z+sizeZ >= existingItem[0][2]):
+                failedAttempts+=1
+                isOccupied = True
+                break; 
+        if isOccupied == False:
+            scenario.append([[x, y, z], [x+sizeX-1, y+sizeY-1, z+sizeZ-1]])
             for i in range(sizeX):
                 for j in range(sizeY):
                     for k in range(sizeZ):
-                        if volume.getV(x+i, y+j, z+k) != 0:
-                            print("ERROR : PARTICLE OVERAPPED!")
-                            print(f"debug information : {items}")
-                        volume.setV( rotatedVol.getV(i,j,k), x+i, y+j, z+k)
-            # INCORPORTATE
-            f.write(f"{pdbIDList[classNum]},{centerX},{centerY},{centerZ},{phi},{theta},{psi}\n")
+                        curVal = rotatedVol.getV(i,j,k)
+                        if curVal != 0:
+                            volume.setV( curVal, x+i, y+j, z+k)
             particleNum+=1
-        else:
-            for existingItem in scenario:
-                if (x <= existingItem[1][0] and x+sizeX >= existingItem[0][0]) and \
-                    (y <= existingItem[1][1] and y+sizeY >= existingItem[0][1]) and \
-                    (z <= existingItem[1][2] and z+sizeZ >= existingItem[0][2]):
-                    failedAttempts+=1
-                    break; 
-                if existingItem == scenario[-1]:
-                    scenario.append([[x, y, z], [x+sizeX-1, y+sizeY-1, z+sizeZ-1]])
-                    for i in range(sizeX):
-                        for j in range(sizeY):
-                            for k in range(sizeZ):
-                                if volume.getV(x+i, y+j, z+k) != 0:
-                                    print("ERROR : PARTICLE OVERAPPED!")
-                                    print(f"debug information : {items}")
-                                volume.setV( rotatedVol.getV(i,j,k), x+i, y+j, z+k)
-                    particleNum+=1
-                    f.write(f"{pdbIDList[classNum]},{centerX},{centerY},{centerZ},{phi},{theta},{psi}\n")
-                    if particleNum % 10 == 0:
-                        print(f"... Particle Num : {particleNum}")  
-    
+            rotatedVol = None
+            f.write(f"{pdbIDList[classNum]},{centerX},{centerY},{centerZ},{phi},{theta},{psi}\n")
+            if particleNum % 10 == 0:
+                print(f"... Particle Num : {particleNum}")  
     f.close()
 
     # --- META DATA ---
@@ -569,7 +591,9 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
 ##########################################################################################################################################################################
 #  Section for Simulation.
 def compactRandomRotation(inputVolume):
-    phi, theta, psi = np.random.randint(low=0, high=360, size=(3,))
+    global called
+    called+=1
+    phi, theta, psi = np.random.randint(low=0, high=360, size=(3,)) # High exclusive
     from pytom_volume import rotate
     rotatedVolume = vol(inputVolume.sizeX(),inputVolume.sizeY(),inputVolume.sizeZ())
     rotatedVolume.setAll(0.0)
@@ -652,6 +676,8 @@ def volumeOutliner(inputVolume, outlineValue=10):
     return inputVolume
 ##########################################################################################################################################################################
 SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
+SHREC2021_FULLex5mrc = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2" ]
+
 SHREC2021_FULL_OCCLIST = [['1s3x', [34, 31, 28]], ['3qm1', [23, 32, 22]], ['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]], ['4cr2', [36, 27, 27]], ['5mrc', [95, 86, 74]]]
 SHREC2021_FULLexc2L2S = [ "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr" ]
 SHREC2021_1bxn = [ "1bxn" ]
@@ -661,21 +687,33 @@ if __name__ == "__main__":
     #################### Workspace ##################    
     now = time.localtime()
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
-    appendMetaDataln(f"=> Scripts running : {programTime}")
+    appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "Making test tomogram for Luna 1."
-    appendMetaDataln(f"=> {DESCRIPTION}")
-
+    DESCRIPTION = "4_8_after improve(720)"
+    appendMetaDataln(f"===> {DESCRIPTION}")
     
     # 01 Work : Just test tomogram without rotation. #######################################################################
     # makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="1_withoutrotation", cubeSize=256, pfailedAttempts=4000, isRotation=False, verbose=True)
     # makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="2_withoutrotation", cubeSize=256, pfailedAttempts=4000, isRotation=False, verbose=True)
+    #volume2MRCconverter("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1_withoutrotation_vol.mrc")
+    #volume2MRCconverter("/cdata/scenario/2_withoutrotation.em", "/cdata/scenario/2_withoutrotation_vol.mrc")
     # customSimulation("/cdata/scenario/1_withoutrotation.em", simulatedPath="/cdata/simulated/1_withoutrotation.em", snrValue=2.0)
     # customSimulation("/cdata/scenario/2_withoutrotation.em", simulatedPath="/cdata/simulated/2_withoutrotation.em", snrValue=2.0)
     # volume2MRCconverter("/cdata/simulated/1_withoutrotation.em", "/cdata/simulated/1_withoutrotation.mrc")
     # volume2MRCconverter("/cdata/simulated/2_withoutrotation.em", "/cdata/simulated/2_withoutrotation.mrc")
     ########################################################################################################################
+    # 02 Get resolution information.
+    # prepareCubeVolumes(SHREC2021_FULL, pdbDir=pdbDataDIR, volumeDir=singleParticleEMCubeDIR, mrcDir=None, toCompact=True, overwrite=True, verbose=True)
+    # 03 Improve : Execute Rotation only None. 
+    # BEFORE :: makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="3_before improve", cubeSize=256, pfailedAttempts=8000, isRotation=True, verbose=True)
+    #makeScenarioByPDBIDs(SHREC2021_FULLex5mrc, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_6_rotFailMax", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
+    #makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_7_rotFailMaxFull", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
+    #makeScenarioByPDBIDs(SHREC2021_FULLex5mrc, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_6_rotFailMax2", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
+    #makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_7_rotFailMaxFull2", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
+    #makeScenarioByPDBIDs(SHREC2021_FULLex5mrc, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_6_rotFailMax", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
+    #makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_8_after improve(720)", cubeSize=256, pfailedAttempts=400000, pparticleNum=720, isRotation=True, verbose=True)
     
+    #appendMetaDataln(f"called num of compact rotation {called}")
     ################### Workspace Ended #############
     print(f" All of the Jobs completed with elapsed time : {time.time()-executionStart}")
     #################### Program Ended ##############
