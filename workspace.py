@@ -26,6 +26,7 @@ pdbDataDIR = f"{rootDIR}/pdbData"
 singleParticleEMCuboidDIR = f"{rootDIR}/singleParticleEM_cuboid"
 singleParticleEMCubeDIR = f"{rootDIR}/singleParticleEM_cube"
 singleParticleMRCCuboidDIR = f"{rootDIR}/singleParticleMRC_cuboid"
+singleParticleMRCCubeDIR = f"{rootDIR}/singleParticleMRC_cube"
 scenarioDIR = f"{rootDIR}/scenario"
 metadataFILE = f"{rootDIR}/metadata.txt"
 
@@ -38,7 +39,25 @@ def appendMetaDataln(metadata):
 ##########################################################################################################################################################################
 #  Section for PDB ID to volume.
 ##########################################################################################################################################################################
+def em2mrc(filename,newfilename):
+    # Not USED : incompatible with mrcfile
+    from pytom_volume import read
+    from pytom.tools.files import checkFileExists,checkDirExists
+    import os
+
+    if not checkFileExists(filename):
+        raise RuntimeError('EM file not found! ',filename)
+
+    emfile = read(filename)
+    emfile.write(newfilename,'mrc')
+
 def atomList2emCube(atomList, pixelSize, densityNegative=False, resolutionFactor=None, verbose=False):
+    atoms = []
+    for atom in atomList:
+        if not atom.getAtomType() in atoms:
+            atoms.append(atom.getAtomType())
+       
+    print(atoms)
     """
     atomList2emCube : generate cube em file containing single particles.
     @param atomList:
@@ -96,7 +115,7 @@ def atomList2emCube(atomList, pixelSize, densityNegative=False, resolutionFactor
 
     # add 1 is crucial, basically
     volumeCompact.setAll(0.0)
-
+    overlap = 0
     for i in range(len(atomList)):
         x = int(atomList[i].getX() - minValues[0] + 0.5 * ( cubeSize - compactX ))
         y = int(atomList[i].getY() - minValues[1] + 0.5 * ( cubeSize - compactY ))
@@ -107,6 +126,8 @@ def atomList2emCube(atomList, pixelSize, densityNegative=False, resolutionFactor
             atomName = atomList[i].getAtomType()[0]
             element = elements.symbol(atomName)
             mass = element.mass
+            if currentValue != 0:
+                overlap += 1
             volumeCompact.setV(currentValue + mass, x, y, z)
             
         else:
@@ -126,6 +147,7 @@ def atomList2emCube(atomList, pixelSize, densityNegative=False, resolutionFactor
     if densityNegative:
         volumeCompact = volumeCompact * -1
 
+    print(overlap, " : is the overlap counted")
     return volumeCompact, cubeSize/2, cubeSize/2, cubeSize/2
 
 def atomList2emCompact(atomList, pixelSize, densityNegative=False, verbose=False):
@@ -326,37 +348,34 @@ def atomList2em(atomList, pixelSize, cubeSize, densityNegative=False):
 
     return volume
 
-def cifpdb2em(inputPath, isPDB, pixelSize, cubeSize=0.0, toCompact=False, chain=None, densityNegative=False, fname='', recenter=True):
+def cifpdb2em(inputPath, pixelSize, cubeSize=0.0, toCompact=False, chain=None, densityNegative=False, fname='', recenter=True):
     """
-    mmCIF2em: Creates an volume out of a mmCIF file
-    @param mmCIFPath: Path to mmCIF file 
+    cifpdb2em: Creates an volume out of a mmCIF file or pdb file
+    @param inputPath: Path to mmCIF file 
     @param pixelSize: The pixel size to convert to 
     @param cubeSize: Resulting cube size
     @param toCompact: Option for compact cuboid
     @return: A volume
     """
-    from math import floor
-    from pytom_volume import vol
-
-    if isPDB:
-        atomList = mmCIFParser(inputPath, chain)
-    else:
+    if inputPath.endswith(".pdb"):
         atomList = naivePDBParser(inputPath, chain)
-    vol = None
+    else:
+        atomList = mmCIFParser(inputPath, chain)
+
     compactX, compactY, compactZ = 0.0, 0.0, 0.0
     if toCompact:
-        vol, compactX, compactY, compactZ = atomList2emCube(atomList, pixelSize, densityNegative)
+        volm, compactX, compactY, compactZ = atomList2emCube(atomList, pixelSize, densityNegative)
     else:
-        vol = atomList2em(atomList, pixelSize, cubeSize, densityNegative)
+        volm = atomList2em(atomList, pixelSize, cubeSize, densityNegative)
 
     if (not toCompact) and recenter:
-        vol = recenterVolume(vol, densityNegative)
+        volm = recenterVolume(volm, densityNegative)
     
     if fname:
-        vol.write(fname)
+        volm.write(fname)
         print(f"MRC file is written in {fname}")
     
-    return vol, compactX, compactY, compactZ
+    return volm, compactX, compactY, compactZ
 
 def getResolution(filePath):
     from pytom.tools.files import checkFileExists
@@ -369,19 +388,19 @@ def getResolution(filePath):
         f = open(filePath, 'r')
         pdbContent = f.read()
         f.close()
-        return re.findall(resPatternPDB, pdbContent)[0]
+        return float(re.findall(resPatternPDB, pdbContent)[0])
     elif filePath.endswith(".cif"):
         resPatternCIF = re.compile("_em_3d_reconstruction.resolution +([0-9]+\.[0-9]+)")
         f = open(filePath, 'r')
         cifContent = f.read()
         f.close()
-        return re.findall(resPatternCIF, cifContent)[0]
+        return float(re.findall(resPatternCIF, cifContent)[0])
         print(f"ends with cif resolution is {resolution}")
     else:
         print("Unsupported File Extension")
         raise RuntimeError('Unsupported file extenstion : ', filePath)
 
-def volume2MRCconverter(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False):
+def volume2MRC(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False):
     inputVolume = read(volPath)
     x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
     if verbose:
@@ -403,52 +422,58 @@ def volume2MRCconverter(volPath, mrcPath, floatMRC=False, overwrite=False, verbo
         print(f"mrc data dimension is converted to... {mrc.data.shape}")
     return
 
-def wgetPDB2Volume(pdbID, pdbDir, volumeDir, mrcDir, cubeSize=0.0, toCompact=False, generateMRC=False, overwrite=False, verbose=False):
-    # pdbDir should not include dangling /
-    # densityNegative for default
-    if verbose:
-        print(f"wgetPDB2Volume is working with PDBID : {pdbID}")
-    
+def wgetByPDBID(pdbID, pdbDir):
     pdbPath = f"{pdbDir}/{pdbID}.pdb"
     cifPath = f"{pdbDir}/{pdbID}.cif"
     pdbURL = f"https://files.rcsb.org/view/{pdbID}.pdb"
     cifURL = f"https://files.rcsb.org/view/{pdbID}.cif"
-    volumePath = f"{volumeDir}/{pdbID}.em"
-    mrcPath = f"{mrcDir}/{pdbID}.mrc"
 
-    templateExists = False
-    if os.path.isfile(pdbPath) or os.path.isfile(cifPath):
-        templateExists = True
+    if os.path.isfile(pdbPath):
+        return pdbPath
+    if os.path.isfile(cifPath):
+        return cifPath
 
     isPDB = True
-    URL = "", Path = ""
+    URL = ""
+    Path = ""
     response = requests.get(pdbURL)
     if not response.status_code == 200:
         response = requests.get(cifURL)
         if not response.status_code == 200:
-            print("Invalid pdb ID maybe.")
-            raise RuntimeError("Invalid pdb ID maybe, " pdbID)
-        
+            raise RuntimeError("Invalid pdb ID maybe, ", pdbID)
         isPDB = False
         URL = cifURL
         Path = cifPath
     else:
         URL = pdbURL
         Path = pdbPath
-    if not templateExists:
-        wget.download(URL, out=Path)
+    wget.download(URL, out=Path)
+    return Path
 
+def wgetPDB2Volume(pdbID, pdbDir, volumeDir, mrcDir, cubeSize=0.0, toCompact=False, generateMRC=False, overwrite=False, verbose=False):
+    """
+    wgetPDB2Volume : Creates an PDB(CIF) file, EM file, MRC file from a PDB ID.
+    @param overwrite : is for overwrite mrcfile(Volume2MRC).
+    """
+    # pdbDir should not include dangling /
+    # densityNegative for default
+    volumePath = f"{volumeDir}/{pdbID}.em"
+    mrcPath = f"{mrcDir}/{pdbID}.mrc"
+    
+    if verbose:
+        print(f"wgetPDB2Volume is working with PDBID : {pdbID}")
+    
+    Path = wgetByPDBID(pdbID, pdbDir)
     resolution = getResolution(Path)
-    print("Resolution of {} is {}".format(pdbID, resolution))
-    _vol, compactX, compactY, compactZ = cifpdb2em(cifPath, isPDB=isPDB, pixelSize=float(resolution), cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=volumePath, densityNegative=False, recenter=True)
+    _vol, compactX, compactY, compactZ = cifpdb2em(Path, pixelSize=resolution, cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=volumePath, densityNegative=False, recenter=True)
     if generateMRC:
-        volume2MRCconverter(volumePath, mrcPath, overwrite=overwrite)
-    return _vol, compactX, compactY, compactZ
+        volume2MRC(volumePath, mrcPath, overwrite=overwrite)
+    return _vol, compactX, compactY, compactZ, resolution
 
 def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, mrcDir, cubeSize=0.0, toCompact=False, generateMRC=False, overwrite=False, verbose=False):
     createdVolumes = []
     for pdbID in pdbIDList:
-        vol, x, y, z = wgetPDB2Volume(pdbID, pdbDir, volumeDir, mrcDir, cubeSize=cubeSize, toCompact=toCompact, generateMRC=generateMRC, overwrite=overwrite, verbose=verbose)
+        vol, x, y, z, _r = wgetPDB2Volume(pdbID, pdbDir, volumeDir, mrcDir, cubeSize=cubeSize, toCompact=toCompact, generateMRC=generateMRC, overwrite=overwrite, verbose=verbose)
         createdVolumes.append(vol)
     return createdVolumes
 
@@ -646,24 +671,30 @@ def compactCuboid2rotateCube(cuboidPath, cubePath):
                 cube.setV( cuboid.getV(i, j, k), i+sx, j+sy, k+sz )
     cube.write(cubePath)
 
-def volumeOutliner(inputVolume, outlineValue=10):
-    x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
-    for i in range(x):
-        inputVolume.setV(outlineValue, i, 0,0)
-        inputVolume.setV(outlineValue, i, y-1,0)
-        inputVolume.setV(outlineValue, i, 0,z-1)
-        inputVolume.setV(outlineValue, i, y-1,z-1)
-    for i in range(y):
-        inputVolume.setV(outlineValue, 0, i,0)
-        inputVolume.setV(outlineValue, x-1, i,0)
-        inputVolume.setV(outlineValue, 0, i,z-1)
-        inputVolume.setV(outlineValue, x-1, i,z-1)
-    for i in range(z):
-        inputVolume.setV(outlineValue, 0, 0,i)
-        inputVolume.setV(outlineValue, x-1, 0,i)
-        inputVolume.setV(outlineValue, 0, y-1,i)
-        inputVolume.setV(outlineValue, x-1, y-1,i)
-    return inputVolume
+def volumeOutliner(inputVolumes, outlineValue=10):
+    for inputVolume in inputVolumes:
+        x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
+        for i in range(x):
+            inputVolume.setV(outlineValue, i, 0,0)
+            inputVolume.setV(outlineValue, i, y-1,0)
+            inputVolume.setV(outlineValue, i, 0,z-1)
+            inputVolume.setV(outlineValue, i, y-1,z-1)
+        for i in range(y):
+            inputVolume.setV(outlineValue, 0, i,0)
+            inputVolume.setV(outlineValue, x-1, i,0)
+            inputVolume.setV(outlineValue, 0, i,z-1)
+            inputVolume.setV(outlineValue, x-1, i,z-1)
+        for i in range(z):
+            inputVolume.setV(outlineValue, 0, 0,i)
+            inputVolume.setV(outlineValue, x-1, 0,i)
+            inputVolume.setV(outlineValue, 0, y-1,i)
+            inputVolume.setV(outlineValue, x-1, y-1,i)
+
+def volumeListWriter(inputVolumes, outputDir, Description):
+    index = 0
+    for inputVolume in inputVolumes:
+        inputVolume.write(f"{outputDir}/{Description}_{index}.em")
+        index += 1
 ##########################################################################################################################################################################
 SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
 SHREC2021_FULLex5mrc = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2" ]
@@ -672,25 +703,104 @@ SHREC2021_FULL_OCCLIST = [['1s3x', [34, 31, 28]], ['3qm1', [23, 32, 22]], ['3gl1
 SHREC2021_FULLexc2L2S = [ "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr" ]
 SHREC2021_1bxn = [ "1bxn" ]
 
-def em2mrc(filename,newfilename):
-    from pytom_volume import read
-    from pytom.tools.files import checkFileExists,checkDirExists
-    import os
+# FROM PDB ID -> Resolution corrected Compact Cuboid!
+def resolutionResizeUpper(identifier, pdbDir, volumeDir, outputDir, toResolution):
+    inputPDBPath = f"{pdbDir}/{identifier}.pdb"
+    from pytom.tools.files import checkFileExists
 
-    if not checkFileExists(filename):
-        raise RuntimeError('EM file not found! ',filename)
+    if not checkFileExists(inputPDBPath):
+        inputPDBPath = f"{pdbDir}/{identifier}.cif"
+        if not checkFileExists(inputPDBPath):
+            raise RuntimeError('resolutionResize : input File not found! ', filePath)
 
-    emfile = read(filename)
-    emfile.write(newfilename,'mrc')
+    inputVolumePath = f"{volumeDir}/{identifier}.em"
+    outputVolumePath = f"{outputDir}/{identifier}.em"
+    # Assume input is cube form!!
+    resolution = getResolution( inputPDBPath )
+    inputVolume = read( inputVolumePath )
+    X, Y, Z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
+    resizedSize = math.ceil( (inputVolume.sizeX() - 1)*resolution / toResolution ) 
+    outputVolume = vol(resizedSize, Y, Z)
+    outputVolume.setAll(0.0)
+    print(f" BEFORE SIZE : {inputVolume.sizeX()} x {inputVolume.sizeY()} x {inputVolume.sizeZ()}")
+    print(f" AFTER SIZE : {outputVolume.sizeX()} x {outputVolume.sizeY()} x {outputVolume.sizeZ()}")
+    # interpolate.
+    for i in range(resizedSize):
+        realcoord_im1 = (i-1) * toResolution
+        realcoord_i   =   i   * toResolution
+        realcoord_ip1 = (i+1) * toResolution
+
+        lowerIdx = math.ceil(realcoord_im1 / resolution) if i-1 > 0 else 0
+        upperIdx = math.floor(realcoord_ip1 / resolution)
+        for j in range(Y):
+            for k in range(Z):
+                curVal = 0.0
+                idx = lowerIdx
+                while idx <= upperIdx:
+                    realcoord_org = idx * resolution
+                    try:
+                        curVal += inputVolume.getV(idx, j, k) * ( toResolution - abs( realcoord_i - realcoord_org ) ) / toResolution
+                    except:
+                        pass
+                    idx += 1
+                outputVolume.setV(curVal, i, j, k)
+
+    inputVolume = outputVolume
+    #print("inputVolume", inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ())
+    outputVolume = vol(resizedSize, resizedSize, Z)
+    outputVolume.setAll(0.0)
+    for j in range(resizedSize):
+        realcoord_jm1 = (j-1) * toResolution
+        realcoord_j   =   j   * toResolution
+        realcoord_jp1 = (j+1) * toResolution
+
+        lowerIdx = math.ceil(realcoord_jm1 / resolution) if j-1 > 0 else 0
+        upperIdx = math.floor(realcoord_jp1 / resolution)
+        for i in range(resizedSize):
+            for k in range(Z):
+                curVal = 0.0
+                idx = lowerIdx
+                while idx <= upperIdx:
+                    realcoord_org = idx * resolution
+                    try:
+                        curVal += inputVolume.getV(i, idx, k) * ( toResolution - abs( realcoord_i - realcoord_org ) ) / toResolution
+                    except:
+                        pass
+                        #print(idx, j, k, "//", X, Y, Z, "//", lowerIdx, "~", upperIdx)
+                    idx += 1
+                outputVolume.setV(curVal, i, j, k)
+
+    inputVolume = outputVolume
+    outputVolume = vol(resizedSize, resizedSize, resizedSize)
+    outputVolume.setAll(0.0)
+    for k in range(resizedSize):
+        realcoord_km1 = (k-1) * toResolution
+        realcoord_k   =   k   * toResolution
+        realcoord_kp1 = (k+1) * toResolution
+        lowerIdx = math.ceil(realcoord_km1 / resolution) if k-1 > 0 else 0
+        upperIdx = math.floor(realcoord_kp1 / resolution)
+        for i in range(resizedSize):
+            for j in range(resizedSize):
+                curVal = 0.0
+                idx = lowerIdx
+                while idx <= upperIdx:
+                    realcoord_org = idx * resolution
+                    try:
+                        curVal += inputVolume.getV(i, j, idx) * ( toResolution - abs( realcoord_i - realcoord_org ) ) / toResolution
+                    except:
+                        pass
+                    idx += 1
+                outputVolume.setV(curVal, i, j, k)
+    outputVolume.write(outputVolumePath)
 
 # FROM PDB ID -> Resolution corrected Compact Cuboid!
-def resolutionResize(inputPDBPath, inputVolumePath, toResolution, outputPath):
-    resolution = getResolution( inputPDBPath )
+def wgetPDB2VolumeR(pdbID, pdbDir, volumeDir, mrcDir, overwrite=False, verbose=False):
+    # toCompact = True.
+    # Always generate MRC. (generateMRC = True)
+    _vol, _x, _y, _z, resolution = wgetPDB2Volume(pdbID, pdbDir, volumeDir, mrcDir, toCompact=True, generateMRC=True, overwrite=overwrite, verbose=verbose)
     
-    # MRC convert.
-    # Interpolate.
-    # Save?
     
+    #volume -> 
 
 if __name__ == "__main__":
     executionStart = time.time()
@@ -699,18 +809,18 @@ if __name__ == "__main__":
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
     appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "4_8_after improve(720)"
+    DESCRIPTION = "5_0_outline test"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
     # 01 Work : Just test tomogram without rotation. #######################################################################
     # makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="1_withoutrotation", cubeSize=256, pfailedAttempts=4000, isRotation=False, verbose=True)
     # makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="2_withoutrotation", cubeSize=256, pfailedAttempts=4000, isRotation=False, verbose=True)
-    #volume2MRCconverter("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1_withoutrotation_vol.mrc")
-    #volume2MRCconverter("/cdata/scenario/2_withoutrotation.em", "/cdata/scenario/2_withoutrotation_vol.mrc")
+    #volume2MRC("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1_withoutrotation_vol.mrc")
+    #volume2MRC("/cdata/scenario/2_withoutrotation.em", "/cdata/scenario/2_withoutrotation_vol.mrc")
     # customSimulation("/cdata/scenario/1_withoutrotation.em", simulatedPath="/cdata/simulated/1_withoutrotation.em", snrValue=2.0)
     # customSimulation("/cdata/scenario/2_withoutrotation.em", simulatedPath="/cdata/simulated/2_withoutrotation.em", snrValue=2.0)
-    # volume2MRCconverter("/cdata/simulated/1_withoutrotation.em", "/cdata/simulated/1_withoutrotation.mrc")
-    # volume2MRCconverter("/cdata/simulated/2_withoutrotation.em", "/cdata/simulated/2_withoutrotation.mrc")
+    # volume2MRC("/cdata/simulated/1_withoutrotation.em", "/cdata/simulated/1_withoutrotation.mrc")
+    # volume2MRC("/cdata/simulated/2_withoutrotation.em", "/cdata/simulated/2_withoutrotation.mrc")
     ########################################################################################################################
     # 02 Get resolution information.
     # prepareCubeVolumes(SHREC2021_FULL, pdbDir=pdbDataDIR, volumeDir=singleParticleEMCubeDIR, mrcDir=None, toCompact=True, overwrite=True, verbose=True)
@@ -723,12 +833,31 @@ if __name__ == "__main__":
     #makeScenarioByPDBIDs(SHREC2021_FULLex5mrc, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_6_rotFailMax", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
     #makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_8_after improve(720)", cubeSize=256, pfailedAttempts=400000, pparticleNum=720, isRotation=True, verbose=True)
     #time1 = time.time()
-    #volume2MRCconverter("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1worot_timetestMine.mrc")
+    #volume2MRC("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1worot_timetestMine.mrc")
     #time2 = time.time()
     #em2mrc("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1worot_timetestPYTOM.mrc")
     #time3 = time.time()
-    volume2MRCconverter("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1_withoutrotation_float16.mrc")
+    #volume2MRC("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1_withoutrotation_float16.mrc")
 
+    #volList = prepareCubeVolumes(SHREC2021_FULL, pdbDataDIR, singleParticleEMCubeDIR, singleParticleMRCCubeDIR, cubeSize=0.0, toCompact=True, generateMRC=False, overwrite=False, verbose=False)
+    #volumeOutliner(volList, outlineValue = 40)
+    #volumeListWriter(volList, "/cdata/outlined", "0313_beforeRes")
+
+    # resolutionResizeUpper("1bxn", "/cdata/pdbData", "/cdata/singleParticleEM_cube", "/cdata/resolution", 10.0)
+    # volList = [ read("/cdata/resolution/1bxn.em") ]
+    # volumeOutliner(volList, outlineValue = 30)
+    # volumeListWriter(volList, "/cdata/outlined", "0313_RETEST")
+
+
+    for pdbID in SHREC2021_FULL:
+        resolutionResizeUpper(pdbID, "/cdata/pdbData", "/cdata/singleParticleEM_cube", "/cdata/resolution", 10.0)
+
+    volList = []
+    for pdbID in SHREC2021_FULL:
+        volList.append(read(f"/cdata/resolution/{pdbID}.em"))
+        
+    volumeOutliner(volList, outlineValue = 30)
+    volumeListWriter(volList, "/cdata/outlined", "0313_Final2")
     #resolutionResize("/cdata/pdbData/1bxn.pdb", "/cdata/singleParticleEM_cube/1bxn.em", 10.0, "/cdata/resolution/1bxn.em")
     #resolutionResize("/cdata/pdbData/5mrc.cif", "/cdata/singleParticleEM_cube/5mrc.em", 10.0, "/cdata/resolution/5mrc.em")
 
