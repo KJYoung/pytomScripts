@@ -326,38 +326,7 @@ def atomList2em(atomList, pixelSize, cubeSize, densityNegative=False):
 
     return volume
 
-def pdb2em(pdbPath, pixelSize, cubeSize=0.0, toCompact=False, chain=None, densityNegative=False, fname='', recenter=True):
-    """
-    pdb2em: Creates an volume out of a PDB file
-    @param pdbPath: Path to PDB file or PDB id for online download
-    @param pixelSize: The pixel size to convert to 
-    @param cubeSize: Resulting cube size
-    @param toCompact: Option for compact cube
-    @return: A volume
-    @author: Thomas Hrabe & Luis Kuhn
-    """
-    from math import floor
-    from pytom_volume import vol
-
-    atomList = naivePDBParser(pdbPath, chain)
-
-    vol = None
-    compactX, compactY, compactZ = 0.0, 0.0, 0.0
-    if toCompact:
-        vol, compactX, compactY, compactZ = atomList2emCube(atomList, pixelSize, densityNegative)
-    else:
-        vol = atomList2em(atomList, pixelSize, cubeSize, densityNegative)
-
-    if (not toCompact) and recenter:
-        vol = recenterVolume(vol, densityNegative)
-
-    if fname:
-        vol.write(fname)
-        print("MRC file is written in {}".format(fname))
-
-    return vol, compactX, compactY, compactZ
-
-def mmCIF2em(mmCIFPath, pixelSize, cubeSize=0.0, toCompact=False, chain=None, densityNegative=False, fname='', recenter=True):
+def cifpdb2em(inputPath, isPDB, pixelSize, cubeSize=0.0, toCompact=False, chain=None, densityNegative=False, fname='', recenter=True):
     """
     mmCIF2em: Creates an volume out of a mmCIF file
     @param mmCIFPath: Path to mmCIF file 
@@ -369,8 +338,10 @@ def mmCIF2em(mmCIFPath, pixelSize, cubeSize=0.0, toCompact=False, chain=None, de
     from math import floor
     from pytom_volume import vol
 
-    atomList = mmCIFParser(mmCIFPath, chain)
-
+    if isPDB:
+        atomList = mmCIFParser(inputPath, chain)
+    else:
+        atomList = naivePDBParser(inputPath, chain)
     vol = None
     compactX, compactY, compactZ = 0.0, 0.0, 0.0
     if toCompact:
@@ -387,15 +358,44 @@ def mmCIF2em(mmCIFPath, pixelSize, cubeSize=0.0, toCompact=False, chain=None, de
     
     return vol, compactX, compactY, compactZ
 
-def volume2MRCconverter(volPath, mrcPath, overwrite=False, verbose=False):
+def getResolution(filePath):
+    from pytom.tools.files import checkFileExists
+
+    if not checkFileExists(filePath):
+        raise RuntimeError('resolutionResize : input File not found! ', filePath)
+    
+    if filePath.endswith(".pdb"):
+        resPatternPDB = re.compile("RESOLUTION\..*([0-9]+\.[0-9]+).*ANGSTROMS")
+        f = open(filePath, 'r')
+        pdbContent = f.read()
+        f.close()
+        return re.findall(resPatternPDB, pdbContent)[0]
+    elif filePath.endswith(".cif"):
+        resPatternCIF = re.compile("_em_3d_reconstruction.resolution +([0-9]+\.[0-9]+)")
+        f = open(filePath, 'r')
+        cifContent = f.read()
+        f.close()
+        return re.findall(resPatternCIF, cifContent)[0]
+        print(f"ends with cif resolution is {resolution}")
+    else:
+        print("Unsupported File Extension")
+        raise RuntimeError('Unsupported file extenstion : ', filePath)
+
+def volume2MRCconverter(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False):
     inputVolume = read(volPath)
     x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
     if verbose:
         print(f"Volume dimension is initially... {x}x{y}x{z}")
-    volumeData = np.empty([x,y,z], dtype=np.int8)
+    
+    if floatMRC:
+        volumeData = np.empty([x, y, z], dtype = np.float32)
+    else:
+        volumeData = np.empty([x, y, z], dtype = np.int8)
+    
     for i in range(inputVolume.sizeX()):
         for j in range(inputVolume.sizeY()):
             for k in range(inputVolume.sizeZ()):
+                #print(type(inputVolume.getV(i,j,k)))
                 volumeData[i,j,k] = inputVolume.getV(i,j,k)
     
     with mrcfile.new(mrcPath, overwrite=overwrite) as mrc:
@@ -420,37 +420,27 @@ def wgetPDB2Volume(pdbID, pdbDir, volumeDir, mrcDir, cubeSize=0.0, toCompact=Fal
     if os.path.isfile(pdbPath) or os.path.isfile(cifPath):
         templateExists = True
 
+    isPDB = True
+    URL = "", Path = ""
     response = requests.get(pdbURL)
     if not response.status_code == 200:
         response = requests.get(cifURL)
         if not response.status_code == 200:
             print("Invalid pdb ID maybe.")
-            return
-        if not templateExists:
-            wget.download(cifURL, out=cifPath)
-        resPatternCIF = re.compile("_em_3d_reconstruction.resolution +([0-9]+\.[0-9]+)")
-
-        f = open(cifPath, 'r')
-        cifContent = f.read()
-        f.close()
-
-        cifPixResolution = re.findall(resPatternCIF, cifContent)[0]
-        print("cif resolution of {} is {}".format(pdbID, cifPixResolution))
-        _vol, compactX, compactY, compactZ = mmCIF2em(cifPath, pixelSize=float(cifPixResolution), cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=volumePath, densityNegative=False, recenter=True)
-        if generateMRC:
-            volume2MRCconverter(volumePath, mrcPath, overwrite=overwrite)
-        return _vol, compactX, compactY, compactZ
+            raise RuntimeError("Invalid pdb ID maybe, " pdbID)
+        
+        isPDB = False
+        URL = cifURL
+        Path = cifPath
+    else:
+        URL = pdbURL
+        Path = pdbPath
     if not templateExists:
-        wget.download(pdbURL, out=pdbPath)
-    resPatternPDB = re.compile("RESOLUTION\..*([0-9]+\.[0-9]+).*ANGSTROMS")
-    
-    f = open(pdbPath, 'r')
-    pdbContent = f.read()
-    f.close()
+        wget.download(URL, out=Path)
 
-    pdbPixResolution = re.findall(resPatternPDB, pdbContent)[0]
-    print("pdb resolution of {} is {}".format(pdbID, pdbPixResolution))
-    _vol, compactX, compactY, compactZ = pdb2em(pdbPath, pixelSize=float(pdbPixResolution), cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=volumePath, densityNegative=False, recenter=True)
+    resolution = getResolution(Path)
+    print("Resolution of {} is {}".format(pdbID, resolution))
+    _vol, compactX, compactY, compactZ = cifpdb2em(cifPath, isPDB=isPDB, pixelSize=float(resolution), cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=volumePath, densityNegative=False, recenter=True)
     if generateMRC:
         volume2MRCconverter(volumePath, mrcPath, overwrite=overwrite)
     return _vol, compactX, compactY, compactZ
@@ -682,6 +672,26 @@ SHREC2021_FULL_OCCLIST = [['1s3x', [34, 31, 28]], ['3qm1', [23, 32, 22]], ['3gl1
 SHREC2021_FULLexc2L2S = [ "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr" ]
 SHREC2021_1bxn = [ "1bxn" ]
 
+def em2mrc(filename,newfilename):
+    from pytom_volume import read
+    from pytom.tools.files import checkFileExists,checkDirExists
+    import os
+
+    if not checkFileExists(filename):
+        raise RuntimeError('EM file not found! ',filename)
+
+    emfile = read(filename)
+    emfile.write(newfilename,'mrc')
+
+# FROM PDB ID -> Resolution corrected Compact Cuboid!
+def resolutionResize(inputPDBPath, inputVolumePath, toResolution, outputPath):
+    resolution = getResolution( inputPDBPath )
+    
+    # MRC convert.
+    # Interpolate.
+    # Save?
+    
+
 if __name__ == "__main__":
     executionStart = time.time()
     #################### Workspace ##################    
@@ -691,7 +701,7 @@ if __name__ == "__main__":
     # Put some description.
     DESCRIPTION = "4_8_after improve(720)"
     appendMetaDataln(f"===> {DESCRIPTION}")
-    
+
     # 01 Work : Just test tomogram without rotation. #######################################################################
     # makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="1_withoutrotation", cubeSize=256, pfailedAttempts=4000, isRotation=False, verbose=True)
     # makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="2_withoutrotation", cubeSize=256, pfailedAttempts=4000, isRotation=False, verbose=True)
@@ -712,7 +722,18 @@ if __name__ == "__main__":
     #makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_7_rotFailMaxFull2", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
     #makeScenarioByPDBIDs(SHREC2021_FULLex5mrc, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_6_rotFailMax", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
     #makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_8_after improve(720)", cubeSize=256, pfailedAttempts=400000, pparticleNum=720, isRotation=True, verbose=True)
-    
+    #time1 = time.time()
+    #volume2MRCconverter("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1worot_timetestMine.mrc")
+    #time2 = time.time()
+    #em2mrc("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1worot_timetestPYTOM.mrc")
+    #time3 = time.time()
+    volume2MRCconverter("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1_withoutrotation_float16.mrc")
+
+    #resolutionResize("/cdata/pdbData/1bxn.pdb", "/cdata/singleParticleEM_cube/1bxn.em", 10.0, "/cdata/resolution/1bxn.em")
+    #resolutionResize("/cdata/pdbData/5mrc.cif", "/cdata/singleParticleEM_cube/5mrc.em", 10.0, "/cdata/resolution/5mrc.em")
+
+    #print(f" 1 : {time2 - time1}")
+    #print(f" 2 : {time3 - time2}")
     #appendMetaDataln(f"called num of compact rotation {called}")
     ################### Workspace Ended #############
     print(f" All of the Jobs completed with elapsed time : {time.time()-executionStart}")
