@@ -723,7 +723,7 @@ def resolutionResizeUpper(identifier, pdbDir, volumeDir, outputDir, toResolution
     outputVolume = vol(resizedSize, Y, Z)
     outputVolume.setAll(0.0)
     print(f" BEFORE SIZE : {inputVolume.sizeX()} x {inputVolume.sizeY()} x {inputVolume.sizeZ()}")
-    print(f" AFTER SIZE : {outputVolume.sizeX()} x {outputVolume.sizeY()} x {outputVolume.sizeZ()}")
+    print(f" AFTER SIZE : {outputVolume.sizeX()} x {outputVolume.sizeX()} x {outputVolume.sizeX()}")
     # interpolate.
     for i in range(resizedSize):
         realcoord_im1 = (i-1) * toResolution
@@ -736,10 +736,14 @@ def resolutionResizeUpper(identifier, pdbDir, volumeDir, outputDir, toResolution
             for k in range(Z):
                 curVal = 0.0
                 idx = lowerIdx
+                #print(lowerIdx, "~", upperIdx, "-----------------------------------------------------------------------")
                 while idx <= upperIdx:
-                    realcoord_org = idx * resolution
+                    realcoord_org = round( idx * resolution, 4 )
                     try:
-                        curVal += inputVolume.getV(idx, j, k) * ( toResolution - abs( realcoord_i - realcoord_org ) ) / toResolution
+                        modfactor = round( ( toResolution - abs( realcoord_i - realcoord_org ) ) / toResolution, 4 )
+                        #print(toResolution, realcoord_i, realcoord_org, "at ", idx)
+                        #print(modfactor, "at ", idx)
+                        curVal += inputVolume.getV(idx, j, k) * modfactor
                     except:
                         pass
                     idx += 1
@@ -793,6 +797,67 @@ def resolutionResizeUpper(identifier, pdbDir, volumeDir, outputDir, toResolution
                 outputVolume.setV(curVal, i, j, k)
     outputVolume.write(outputVolumePath)
 
+def resolutionResizeUnity(identifier, pdbDir, volumeDir, outputDir, toResolution):
+    inputPDBPath = f"{pdbDir}/{identifier}.pdb"
+    from pytom.tools.files import checkFileExists
+
+    if not checkFileExists(inputPDBPath):
+        inputPDBPath = f"{pdbDir}/{identifier}.cif"
+        if not checkFileExists(inputPDBPath):
+            raise RuntimeError('resolutionResize : input File not found! ', filePath)
+
+    inputVolumePath = f"{volumeDir}/{identifier}.em"
+    outputVolumePath = f"{outputDir}/{identifier}.em"
+    # Assume input is cube form!!
+    resolution = getResolution( inputPDBPath )
+    inputVolume = read( inputVolumePath )
+    X, Y, Z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
+    resizedSize = math.ceil( (inputVolume.sizeX() - 1)*resolution / toResolution ) 
+    outputVolume = vol(resizedSize, resizedSize, resizedSize)
+    outputVolume.setAll(0.0)
+    print(f" BEFORE SIZE : {inputVolume.sizeX()} x {inputVolume.sizeY()} x {inputVolume.sizeZ()}")
+    print(f" AFTER SIZE : {outputVolume.sizeX()} x {outputVolume.sizeX()} x {outputVolume.sizeX()}")
+    # interpolate.
+    for i in range(resizedSize):
+        for j in range(resizedSize):
+            for k in range(resizedSize):
+                curVal = 0.0
+
+                realcoord_i   =   i   * toResolution
+                realcoord_j   =   j   * toResolution
+                realcoord_k   =   k   * toResolution
+                
+                lowerIdxX = math.ceil((i-1) * toResolution / resolution) if i-1 > 0 else 0
+                upperIdxX = math.floor((i+1) * toResolution / resolution)
+                lowerIdxY = math.ceil((j-1) * toResolution / resolution) if j-1 > 0 else 0
+                upperIdxY = math.floor((j+1) * toResolution / resolution)
+                lowerIdxZ = math.ceil((k-1) * toResolution / resolution) if k-1 > 0 else 0
+                upperIdxZ = math.floor((k+1) * toResolution / resolution)
+
+                idxX = lowerIdxX
+                while idxX <= upperIdxX:
+                    realcordX = round( idxX * resolution, 4)
+                    idxY = lowerIdxY
+                    while idxY <= upperIdxY:
+                        realcordY = round( idxY * resolution, 4)
+                        idxZ = lowerIdxZ
+                        while idxZ <= upperIdxZ:
+                            realcordZ = round( idxZ * resolution, 4 )
+                            modfactorX = round( ( toResolution - abs( realcoord_i - realcordX ) ) / toResolution, 4 )
+                            modfactorY = round( ( toResolution - abs( realcoord_j - realcordY ) ) / toResolution, 4 )
+                            modfactorZ = round( ( toResolution - abs( realcoord_k - realcordZ ) ) / toResolution, 4 )
+
+                            modfactor = modfactorX * modfactorY * modfactorZ
+                            try:
+                                val = inputVolume.getV(idxX, idxY, idxZ) * modfactor
+                                curVal += val
+                            except:
+                                pass
+                            idxZ += 1
+                        idxY += 1
+                    idxX += 1
+                outputVolume.setV(curVal, i, j, k)
+    outputVolume.write(outputVolumePath)
 # FROM PDB ID -> Resolution corrected Compact Cuboid!
 def wgetPDB2VolumeR(pdbID, pdbDir, volumeDir, mrcDir, overwrite=False, verbose=False):
     # toCompact = True.
@@ -843,21 +908,23 @@ if __name__ == "__main__":
     #volumeOutliner(volList, outlineValue = 40)
     #volumeListWriter(volList, "/cdata/outlined", "0313_beforeRes")
 
-    # resolutionResizeUpper("1bxn", "/cdata/pdbData", "/cdata/singleParticleEM_cube", "/cdata/resolution", 10.0)
+    #resolutionResizeUnity("1bxn", "/cdata/pdbData", "/cdata/singleParticleEM_cube", "/cdata/resolution2", 10.0)
     # volList = [ read("/cdata/resolution/1bxn.em") ]
     # volumeOutliner(volList, outlineValue = 30)
     # volumeListWriter(volList, "/cdata/outlined", "0313_RETEST")
 
 
     for pdbID in SHREC2021_FULL:
-        resolutionResizeUpper(pdbID, "/cdata/pdbData", "/cdata/singleParticleEM_cube", "/cdata/resolution", 10.0)
+        resolutionResizeUnity(pdbID, "/cdata/pdbData", "/cdata/singleParticleEM_cube", "/cdata/resolution2", 10.0)
 
     volList = []
     for pdbID in SHREC2021_FULL:
-        volList.append(read(f"/cdata/resolution/{pdbID}.em"))
+        volList.append(read(f"/cdata/resolution2/{pdbID}.em"))
         
-    volumeOutliner(volList, outlineValue = 30)
-    volumeListWriter(volList, "/cdata/outlined", "0313_Final2")
+    volumeOutliner(volList, outlineValue = 300)
+    volumeListWriter(volList, "/cdata/outlined", "0313_UNITY")
+
+
     #resolutionResize("/cdata/pdbData/1bxn.pdb", "/cdata/singleParticleEM_cube/1bxn.em", 10.0, "/cdata/resolution/1bxn.em")
     #resolutionResize("/cdata/pdbData/5mrc.cif", "/cdata/singleParticleEM_cube/5mrc.em", 10.0, "/cdata/resolution/5mrc.em")
 
