@@ -14,6 +14,7 @@ import mrcfile
 import math 
 import random
 import time
+import json
 # ------------
 # Custom volume generator from pdb, cif.
 # Compact volume generaor is added.
@@ -399,6 +400,10 @@ def getResolution(filePath):
         print("Unsupported File Extension")
         raise RuntimeError('Unsupported file extenstion : ', filePath)
 
+# TODO
+def getResolutionsByID(pdbIDList):
+    pass
+
 def volume2MRC(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False):
     inputVolume = read(volPath)
     x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
@@ -507,11 +512,42 @@ def makeCompact(inputVolume):
 ##########################################################################################################################################################################
 #  Section for Multi particle scenario.
 ##########################################################################################################################################################################
+def getMedadataJsonTemplate():
+    ''' JSON format
+{
+    "header" : "STRING",
+    "pdbIDs": "STRING LIST",
+    "resolutions": "FLOAT LIST",
+    "resolution": "FLOAT",
+    "particles": [{
+            "pdbID": "STRING",
+            "occupyVoxels": [{"x": "int", "y": "int", "z": "int", "v": "int"}]
+        }],
+    "noiseInfo": "STRING"
+}
+    '''
+    return {
+        "header" : None,
+        "pdbIDs": None,
+        "resolutions": None,
+        "resolution": None,
+        "particles": None,
+        "noiseInfo": None
+    }
 def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", cubeSize=128, pfailedAttempts=9000, pparticleNum=1600, overwrite=False, isRotation=False, verbose=False):
     # cuboidalOccupancyList = [['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]]]
     startTime = time.time()
     scenarioMetaDataFile = f"{scenarioDir}/{scenarioIdentifier}.txt"
+    scenarioJsonFile = f"{scenarioDir}/{scenarioIdentifier}.json"
     scenarioVolumeFile = f"{scenarioDir}/{scenarioIdentifier}.em"
+
+    jsonMetadataObject = getMedadataJsonTemplate()
+    jsonMetadataObject["header"] = "TESTING"
+    jsonMetadataObject["pdbIDs"] = pdbIDList
+    jsonMetadataObject["resolutions"] = [3.0]
+    jsonMetadataObject["resolution"] = 10.0
+    jsonMetadataObject["particles"] = []
+    jsonMetadataObject["noiseInfo"] = "Just White Noise(Gaussian)"
 
     f = open(scenarioMetaDataFile, 'w')
     fulltomX, fulltomY, fulltomZ = 2*cubeSize, 2*cubeSize, 2*cubeSize
@@ -535,17 +571,28 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     centerX, centerY, centerZ = x+ sizeX/2, y+ sizeY/2, z+ sizeZ/2
     
     scenario.append([[x,y,z], [x+sizeX-1, y+sizeY-1, z+sizeZ-1]])
+
+    occupyVoxels = []
     for i in range(sizeX):
         for j in range(sizeY):
             for k in range(sizeZ):
-                volume.setV( rotatedVol.getV(i,j,k), x+i, y+j, z+k)
+                curVal = rotatedVol.getV(i,j,k)
+                if curVal != 0.0:
+                    volume.setV( curVal , x+i, y+j, z+k)
+                    occupyVoxels.append( [x+i, y+j, z+k] )
+    
+    jsonMetadataObject["particles"].append( { 
+        "pdbID" : pdbIDList[classNum],
+        "occupyVoxels" : occupyVoxels
+    } )
     # INCORPORTATE
     f.write(f"{pdbIDList[classNum]},{centerX},{centerY},{centerZ},{phi},{theta},{psi}\n")
     particleNum+=1
     rotatedVol = None
     rotFailNum = 0
     while failedAttempts < pfailedAttempts and particleNum < pparticleNum:
-        if verbose and failedAttempts%300 == 0 and failedAttempts != 0:
+        occupyVoxels = []
+        if verbose and failedAttempts%500 == 0 and failedAttempts != 0:
             print(f"... Now failed Attemps are {failedAttempts}")   
         if isRotation == True:
             if rotFailNum == 20:
@@ -583,15 +630,24 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
                 for j in range(sizeY):
                     for k in range(sizeZ):
                         curVal = rotatedVol.getV(i,j,k)
-                        if curVal != 0:
+                        if curVal != 0: # TODO
                             volume.setV( curVal, x+i, y+j, z+k)
+                            occupyVoxels.append( [x+i, y+j, z+k] )
+    
+            jsonMetadataObject["particles"].append( { 
+                "pdbID" : pdbIDList[classNum],
+                "occupyVoxels" : occupyVoxels
+            } )
             particleNum+=1
             rotatedVol = None
             f.write(f"{pdbIDList[classNum]},{centerX},{centerY},{centerZ},{phi},{theta},{psi}\n")
-            if particleNum % 10 == 0:
+            if particleNum % 50 == 0:
                 print(f"... Particle Num : {particleNum}")  
     f.close()
 
+    with open(scenarioJsonFile, "w") as json_file:
+        json.dump(jsonMetadataObject, json_file)
+    
     # --- META DATA ---
     appendMetaDataln(f"makeScenarioByPDBIDs {scenarioIdentifier} done - time elapsed : {time.time() - startTime}s")
     appendMetaDataln(f"-output file : {scenarioVolumeFile}, cubeSize : {fulltomX}x{fulltomY}x{fulltomZ}")
@@ -855,7 +911,7 @@ if __name__ == "__main__":
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
     appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "5_0_outline test"
+    DESCRIPTION = "5_1_json format test"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
     # 01 Work : Just test tomogram without rotation. #######################################################################
@@ -908,10 +964,10 @@ if __name__ == "__main__":
 
 
     
-    #makeScenarioByPDBIDs(SHREC2021_FULL, "/cdata/resolution2", "/cdata/scenario", "0314_resolution", cubeSize=256, pfailedAttempts=9000, pparticleNum=1600, overwrite=False, isRotation=True, verbose=True)
-    customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge40.em", snrValue=1000., wedgeAngle=40, shift=None)
-    customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge60.em", snrValue=1000., wedgeAngle=60, shift=None)
-    customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge70.em", snrValue=1000., wedgeAngle=70, shift=None)
+    makeScenarioByPDBIDs(SHREC2021_FULL, "/cdata/resolution2", "/cdata/scenario", "0315_json3", cubeSize=256, pfailedAttempts=9000, pparticleNum=1600, overwrite=False, isRotation=True, verbose=True)
+    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge40.em", snrValue=1000., wedgeAngle=40, shift=None)
+    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge60.em", snrValue=1000., wedgeAngle=60, shift=None)
+    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge70.em", snrValue=1000., wedgeAngle=70, shift=None)
     #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-3_resolutionSIM1.0.em", snrValue=1., wedgeAngle=None, shift=None)
     #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-3_resolutionSIM0.1.em", snrValue=.1, wedgeAngle=None, shift=None)
     #resolutionResize("/cdata/pdbData/1bxn.pdb", "/cdata/singleParticleEM_cube/1bxn.em", 10.0, "/cdata/resolution/1bxn.em")

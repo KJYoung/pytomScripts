@@ -1,0 +1,21 @@
+{
+    "v3": {
+    "header" : "STRING",
+    "pdbIDs": "STRING LIST",
+    "resolutions": "FLOAT LIST",
+    "resolution": "FLOAT",
+    "particles": [{
+            "pdbID": "STRING",
+            "occupyVoxels": [ [ "x", "y", "z" ] ]
+        }],
+    "noiseInfo": "STRING"
+},
+    "v4": {
+        "header" : "STRING",
+        "pdbIDs": "STRING LIST",
+        "resolutions": "FLOAT LIST",
+        "resolution": "FLOAT",
+        "particles": [ [ "classNum", [[ "x", "y", "z"], [ "x", "y", "z"]]] ],
+        "noiseInfo": "STRING"
+    }
+}
