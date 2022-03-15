@@ -1,6 +1,5 @@
 from pytom.basic.files import recenterVolume, naivePDBParser, mmCIFParser
 from pytom.basic.files import read
-from pytom.simulation.EMSimulation import simpleSimulation
 from pytom_volume import vol, initSphere
 from pytom.basic.structures import WedgeInfo
 
@@ -616,6 +615,79 @@ def compactRandomRotation(inputVolume):
     comp = makeCompact(rotatedVolume)
     return comp, phi, theta, psi
 
+def simpleSimulation(volume,rotation,shiftV,wedgeInfo=None,SNR=0.1,mask=None):
+    """
+    simpleSimulation: Simulates an ET by applying rotation,shift,wedge and noise to an volume
+    
+    @param volume: the volume used for simulations
+    @param rotation: the rotation applied to volume
+    @param shiftV: shift vector applied to volume
+    @param wedgeInfo: wedge applied to volume
+    @param SNR: noise level applied to volume
+    @param mask: Apodisation mask 
+    @return: a simple cryo em simulation of volume 
+    """
+    from pytom_volume import vol,rotate,shift,initSphere
+    from pytom.simulation import whiteNoise
+    
+    if not rotation == [0,0,0]:
+        print('---ROTATE---')
+        #print 'EMSimulation simpleSimulation: in rotation 1 ' + str(rotation)
+        rotatedCopy = vol(volume.sizeX(),volume.sizeY(),volume.sizeZ())
+        rotate(volume,rotatedCopy,rotation[0],rotation[1],rotation[2])
+    else:
+        rotatedCopy = vol(volume.sizeX(),volume.sizeY(),volume.sizeZ())
+        rotatedCopy.copyVolume(volume)
+    
+    # #print 'EMSimulation simpleSimulation: after rotation ' 
+    
+    if not mask:
+        #print 'EMSimulation simpleSimulation: in mask 1' 
+        # mask = vol(volume.sizeX(),volume.sizeY(),volume.sizeZ())
+        # initSphere(mask,volume.sizeX()//2-1,0,0, volume.sizeX()//2,
+	    # volume.sizeX()//2, volume.sizeX()//2)
+        # maskedCopy = rotatedCopy * mask # element wise multiplication.
+        maskedCopy = rotatedCopy
+    # if not mask.__class__ == vol:
+    #     #print 'EMSimulation simpleSimulation: in mask 2'
+        
+    #     mask = mask.getVolume(rotation)
+    #     maskedCopy = rotatedCopy * mask        
+    # else:
+    #     #print 'EMSimulation simpleSimulation: in mask 3'
+    #     maskedCopy = rotatedCopy * mask
+    
+    print("EMSimulation simpleSimulation:  after mask")
+    
+    if not shiftV == [0,0,0]:
+        print('--SHIFT---')
+        shiftedCopy = vol(volume.sizeX(),volume.sizeY(),volume.sizeZ())
+        shift(maskedCopy,shiftedCopy,shiftV[0],shiftV[1],shiftV[2])
+    else:
+        shiftedCopy = vol(volume.sizeX(),volume.sizeY(),volume.sizeZ())
+        shiftedCopy.copyVolume(maskedCopy)
+        
+    if (shiftV == [0,0,0]) and (rotation==[0,0,0]):
+        #no shift and no rotation -> simply take the original volume
+        c = vol(maskedCopy.sizeX(),volume.sizeY(),volume.sizeZ())
+        c.copyVolume(maskedCopy)
+        noisyCopy = whiteNoise.add(c,SNR)
+    else:
+        noisyCopy = whiteNoise.add(shiftedCopy,SNR)
+    
+    if wedgeInfo:
+        print('---WEDGE---')
+        result = wedgeInfo.apply(noisyCopy)
+    else:
+        result = noisyCopy
+    
+    print('EMSimulation Simulation: end function')
+        
+    if result.__class__ == list :
+        return result[0]
+    else:
+        return result
+
 def customSimulation(volumePath, simulatedPath=None, snrValue=0.1, rotation=None, wedgeAngle=None, shift=None):
     # Rotation : [ x axis , z axis , y axis ]
     wedge = 0.0
@@ -624,12 +696,14 @@ def customSimulation(volumePath, simulatedPath=None, snrValue=0.1, rotation=None
     v = read(volumePath)
     if rotation == None:
         rotation = [0, 0, 0]
-    if not wedgeAngle == None:
-        wedge = wedgeAngle
+    
+    if wedgeAngle == None:
+        wi = None
+    else:
+        wi = WedgeInfo(wedgeAngle=wedgeAngle, cutoffRadius=0.0)
     if not shift == None:
         shiftList = shift
     
-    wi = WedgeInfo(wedgeAngle=wedge, cutoffRadius=0.0)
     s = simpleSimulation( volume=v, rotation=rotation, shiftV=shiftList, wedgeInfo=wi, SNR=snrValue)
     if simulatedPath:
         s.write(simulatedPath)
@@ -704,99 +778,6 @@ SHREC2021_FULLexc2L2S = [ "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn"
 SHREC2021_1bxn = [ "1bxn" ]
 
 # FROM PDB ID -> Resolution corrected Compact Cuboid!
-def resolutionResizeUpper(identifier, pdbDir, volumeDir, outputDir, toResolution):
-    inputPDBPath = f"{pdbDir}/{identifier}.pdb"
-    from pytom.tools.files import checkFileExists
-
-    if not checkFileExists(inputPDBPath):
-        inputPDBPath = f"{pdbDir}/{identifier}.cif"
-        if not checkFileExists(inputPDBPath):
-            raise RuntimeError('resolutionResize : input File not found! ', filePath)
-
-    inputVolumePath = f"{volumeDir}/{identifier}.em"
-    outputVolumePath = f"{outputDir}/{identifier}.em"
-    # Assume input is cube form!!
-    resolution = getResolution( inputPDBPath )
-    inputVolume = read( inputVolumePath )
-    X, Y, Z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
-    resizedSize = math.ceil( (inputVolume.sizeX() - 1)*resolution / toResolution ) 
-    outputVolume = vol(resizedSize, Y, Z)
-    outputVolume.setAll(0.0)
-    print(f" BEFORE SIZE : {inputVolume.sizeX()} x {inputVolume.sizeY()} x {inputVolume.sizeZ()}")
-    print(f" AFTER SIZE : {outputVolume.sizeX()} x {outputVolume.sizeX()} x {outputVolume.sizeX()}")
-    # interpolate.
-    for i in range(resizedSize):
-        realcoord_im1 = (i-1) * toResolution
-        realcoord_i   =   i   * toResolution
-        realcoord_ip1 = (i+1) * toResolution
-
-        lowerIdx = math.ceil(realcoord_im1 / resolution) if i-1 > 0 else 0
-        upperIdx = math.floor(realcoord_ip1 / resolution)
-        for j in range(Y):
-            for k in range(Z):
-                curVal = 0.0
-                idx = lowerIdx
-                #print(lowerIdx, "~", upperIdx, "-----------------------------------------------------------------------")
-                while idx <= upperIdx:
-                    realcoord_org = round( idx * resolution, 4 )
-                    try:
-                        modfactor = round( ( toResolution - abs( realcoord_i - realcoord_org ) ) / toResolution, 4 )
-                        #print(toResolution, realcoord_i, realcoord_org, "at ", idx)
-                        #print(modfactor, "at ", idx)
-                        curVal += inputVolume.getV(idx, j, k) * modfactor
-                    except:
-                        pass
-                    idx += 1
-                outputVolume.setV(curVal, i, j, k)
-
-    inputVolume = outputVolume
-    #print("inputVolume", inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ())
-    outputVolume = vol(resizedSize, resizedSize, Z)
-    outputVolume.setAll(0.0)
-    for j in range(resizedSize):
-        realcoord_jm1 = (j-1) * toResolution
-        realcoord_j   =   j   * toResolution
-        realcoord_jp1 = (j+1) * toResolution
-
-        lowerIdx = math.ceil(realcoord_jm1 / resolution) if j-1 > 0 else 0
-        upperIdx = math.floor(realcoord_jp1 / resolution)
-        for i in range(resizedSize):
-            for k in range(Z):
-                curVal = 0.0
-                idx = lowerIdx
-                while idx <= upperIdx:
-                    realcoord_org = idx * resolution
-                    try:
-                        curVal += inputVolume.getV(i, idx, k) * ( toResolution - abs( realcoord_i - realcoord_org ) ) / toResolution
-                    except:
-                        pass
-                        #print(idx, j, k, "//", X, Y, Z, "//", lowerIdx, "~", upperIdx)
-                    idx += 1
-                outputVolume.setV(curVal, i, j, k)
-
-    inputVolume = outputVolume
-    outputVolume = vol(resizedSize, resizedSize, resizedSize)
-    outputVolume.setAll(0.0)
-    for k in range(resizedSize):
-        realcoord_km1 = (k-1) * toResolution
-        realcoord_k   =   k   * toResolution
-        realcoord_kp1 = (k+1) * toResolution
-        lowerIdx = math.ceil(realcoord_km1 / resolution) if k-1 > 0 else 0
-        upperIdx = math.floor(realcoord_kp1 / resolution)
-        for i in range(resizedSize):
-            for j in range(resizedSize):
-                curVal = 0.0
-                idx = lowerIdx
-                while idx <= upperIdx:
-                    realcoord_org = idx * resolution
-                    try:
-                        curVal += inputVolume.getV(i, j, idx) * ( toResolution - abs( realcoord_i - realcoord_org ) ) / toResolution
-                    except:
-                        pass
-                    idx += 1
-                outputVolume.setV(curVal, i, j, k)
-    outputVolume.write(outputVolumePath)
-
 def resolutionResizeUnity(identifier, pdbDir, volumeDir, outputDir, toResolution):
     inputPDBPath = f"{pdbDir}/{identifier}.pdb"
     from pytom.tools.files import checkFileExists
@@ -897,6 +878,18 @@ if __name__ == "__main__":
     #makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_7_rotFailMaxFull2", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
     #makeScenarioByPDBIDs(SHREC2021_FULLex5mrc, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_6_rotFailMax", cubeSize=256, pfailedAttempts=400000, isRotation=True, verbose=True)
     #makeScenarioByPDBIDs(SHREC2021_FULL, volumeDir=singleParticleEMCubeDIR, scenarioDir=scenarioDIR, scenarioIdentifier="4_8_after improve(720)", cubeSize=256, pfailedAttempts=400000, pparticleNum=720, isRotation=True, verbose=True)
+    # 04 Make Resolution corrected volumes.
+    # for pdbID in SHREC2021_FULL:
+    #     resolutionResizeUnity(pdbID, "/cdata/pdbData", "/cdata/singleParticleEM_cube", "/cdata/resolution2", 10.0)
+
+    # volList = []
+    # for pdbID in SHREC2021_FULL:
+    #     volList.append(read(f"/cdata/resolution2/{pdbID}.em"))
+        
+    # volumeOutliner(volList, outlineValue = 300)
+    # volumeListWriter(volList, "/cdata/outlined", "0313_UNITY")
+    #######################################################################################################################
+    
     #time1 = time.time()
     #volume2MRC("/cdata/scenario/1_withoutrotation.em", "/cdata/scenario/1worot_timetestMine.mrc")
     #time2 = time.time()
@@ -914,17 +907,13 @@ if __name__ == "__main__":
     # volumeListWriter(volList, "/cdata/outlined", "0313_RETEST")
 
 
-    for pdbID in SHREC2021_FULL:
-        resolutionResizeUnity(pdbID, "/cdata/pdbData", "/cdata/singleParticleEM_cube", "/cdata/resolution2", 10.0)
-
-    volList = []
-    for pdbID in SHREC2021_FULL:
-        volList.append(read(f"/cdata/resolution2/{pdbID}.em"))
-        
-    volumeOutliner(volList, outlineValue = 300)
-    volumeListWriter(volList, "/cdata/outlined", "0313_UNITY")
-
-
+    
+    #makeScenarioByPDBIDs(SHREC2021_FULL, "/cdata/resolution2", "/cdata/scenario", "0314_resolution", cubeSize=256, pfailedAttempts=9000, pparticleNum=1600, overwrite=False, isRotation=True, verbose=True)
+    customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge40.em", snrValue=1000., wedgeAngle=40, shift=None)
+    customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge60.em", snrValue=1000., wedgeAngle=60, shift=None)
+    customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge70.em", snrValue=1000., wedgeAngle=70, shift=None)
+    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-3_resolutionSIM1.0.em", snrValue=1., wedgeAngle=None, shift=None)
+    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-3_resolutionSIM0.1.em", snrValue=.1, wedgeAngle=None, shift=None)
     #resolutionResize("/cdata/pdbData/1bxn.pdb", "/cdata/singleParticleEM_cube/1bxn.em", 10.0, "/cdata/resolution/1bxn.em")
     #resolutionResize("/cdata/pdbData/5mrc.cif", "/cdata/singleParticleEM_cube/5mrc.em", 10.0, "/cdata/resolution/5mrc.em")
 
