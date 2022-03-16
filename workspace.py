@@ -8,6 +8,9 @@ import numpy as np
 import mrcfile
 import os.path, wget, re, requests, math, random, time, json
 
+# My Other files
+from utils import volumeOutliner
+
 rootDIR = "/cdata"
 pdbDataDIR = f"{rootDIR}/pdbData"
 singleParticleEMCuboidDIR = f"{rootDIR}/singleParticleEM_cuboid"
@@ -889,7 +892,9 @@ if __name__ == "__main__":
     # volumeOutliner(volList, outlineValue = 300)
     # volumeListWriter(volList, "/cdata/outlined", "0313_UNITY")
     #######################################################################################################################
-    makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution2", "/cdata/scenario", "0315_merge2", 10.0, SNR=1.0, tomoSize=256, pfailedAttempts=6000, pparticleNum=1000, isRotation=True, verbose=False)
+    ov = volumeOutliner("/cdata/scenario/0315_merge2.em", isFile=True, outlineValue = 500)
+    ov.write("/cdata/outlined/0315_merge2_utilstest.em")
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution2", "/cdata/scenario", "0315_merge2", 10.0, SNR=1.0, tomoSize=256, pfailedAttempts=6000, pparticleNum=1000, isRotation=True, verbose=False)
 
     #makeScenarioByPDBIDs(SHREC2021_FULL, "/cdata/resolution2", "/cdata/scenario", "0315_json3", cubeSize=256, pfailedAttempts=9000, pparticleNum=1600, overwrite=False, isRotation=True, verbose=True)
     #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge40.em", snrValue=1000., wedgeAngle=40, shift=None)

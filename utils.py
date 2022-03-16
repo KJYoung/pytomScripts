@@ -1,3 +1,5 @@
+from pytom.basic.files import read
+from pytom_volume import vol
 ################################
 # matrixToVolLayerX, Y, Z
 # volumeOutliner
@@ -20,7 +22,12 @@ def matrixToVolLayerX(vol, matrix, xheight):
             vol.setV(matrix[i][j], i, j, xheight)
     return vol
 
-def volumeOutliner(inputVolumes, outlineValue=10):
+# isFile = True -> filePath
+# isFile = False -> list of volume
+def volumeOutliner(inputVolumes, isFile=False, outlineValue=10):
+    if isFile:
+        inputVolumes = [ read(inputVolumes) ]
+     
     for inputVolume in inputVolumes:
         x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
         for i in range(x):
@@ -38,6 +45,9 @@ def volumeOutliner(inputVolumes, outlineValue=10):
             inputVolume.setV(outlineValue, x-1, 0,i)
             inputVolume.setV(outlineValue, 0, y-1,i)
             inputVolume.setV(outlineValue, x-1, y-1,i)
+    
+    if isFile:
+        return inputVolumes[0]
 
 def volumeListWriter(inputVolumes, outputDir, Description):
     index = 0
