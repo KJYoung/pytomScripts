@@ -91,3 +91,16 @@ def resolutionResizeUpper(identifier, pdbDir, volumeDir, outputDir, toResolution
                     idx += 1
                 outputVolume.setV(curVal, i, j, k)
     outputVolume.write(outputVolumePath)
+
+def compactCuboid2rotateCube(cuboidPath, cubePath):
+    cuboid = read(cuboidPath)
+    x, y, z = cuboid.sizeX(), cuboid.sizeY(), cuboid.sizeZ()
+    size = int(math.sqrt( x**2 + y**2 + z**2 )) + 1 # 0.5 * 2 = 1.
+    cube = vol(size, size, size)
+    
+    sx, sy, sz = int((size-x)/2), int((size-y)/2), int((size-z)/2) 
+    for i in range(x):
+        for j in range(y):
+            for k in range(z):
+                cube.setV( cuboid.getV(i, j, k), i+sx, j+sy, k+sz )
+    cube.write(cubePath)

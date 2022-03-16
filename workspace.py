@@ -1,20 +1,12 @@
-from pytom.basic.files import recenterVolume, naivePDBParser, mmCIFParser
-from pytom.basic.files import read
+from pytom.basic.files import recenterVolume, naivePDBParser, mmCIFParser, read
 from pytom_volume import vol, initSphere
 from pytom.basic.structures import WedgeInfo
 
 # VKJY
-import wget
-import os.path
 from urllib.error import HTTPError
 import numpy as np
 import mrcfile
-import re, requests, math, random, time, json
-# ------------
-# Custom volume generator from pdb, cif.
-# Compact volume generaor is added.
-#
-#
+import os.path, wget, re, requests, math, random, time, json
 
 rootDIR = "/cdata"
 pdbDataDIR = f"{rootDIR}/pdbData"
@@ -25,8 +17,6 @@ singleParticleMRCCubeDIR = f"{rootDIR}/singleParticleMRC_cube"
 scenarioDIR = f"{rootDIR}/scenario"
 metadataFILE = f"{rootDIR}/metadata.txt"
 
-global called
-called =  0
 def appendMetaDataln(metadata):
     fmeta = open(metadataFILE, "a")
     fmeta.write(metadata + "\n")
@@ -510,17 +500,17 @@ def makeCompact(inputVolume):
 ##########################################################################################################################################################################
 def getMedadataJsonTemplate():
     ''' JSON format
-{
-    "header" : "STRING",
-    "pdbIDs": "STRING LIST",
-    "resolutions": "FLOAT LIST",
-    "resolution": "FLOAT",
-    "particles": [{
-            "pdbID": "STRING",
-            "occupyVoxels": [{"x": "int", "y": "int", "z": "int", "v": "int"}]
-        }],
-    "noiseInfo": "STRING"
-}
+    {
+        "header" : "STRING",
+        "pdbIDs": "STRING LIST",
+        "resolutions": "FLOAT LIST",
+        "resolution": "FLOAT",
+        "particles": [{
+                "pdbID": "STRING",
+                "occupyVoxels": [{"x": "int", "y": "int", "z": "int", "v": "int"}]
+            }],
+        "noiseInfo": "STRING"
+    }
     '''
     return {
         "header" : None,
@@ -793,62 +783,7 @@ def noiseApplier(volume, SNR=0.1):
     return noisyCopy
 
 ##########################################################################################################################################################################
-#  Section for Utility.
-
-## Write 2D matrix into the volume 
-def matrixToVolLayerZ(vol, matrix, zheight):
-    for i in range(vol.sizeX()):
-        for j in range(vol.sizeY()):
-            vol.setV(matrix[i][j], i, j, zheight)
-    return vol
-def matrixToVolLayerY(vol, matrix, yheight):
-    for i in range(vol.sizeX()):
-        for j in range(vol.sizeZ()):
-            vol.setV(matrix[i][j], i, j, yheight)
-    return vol
-def matrixToVolLayerX(vol, matrix, xheight):
-    for i in range(vol.sizeZ()):
-        for j in range(vol.sizeY()):
-            vol.setV(matrix[i][j], i, j, xheight)
-    return vol
-
-def compactCuboid2rotateCube(cuboidPath, cubePath):
-    cuboid = read(cuboidPath)
-    x, y, z = cuboid.sizeX(), cuboid.sizeY(), cuboid.sizeZ()
-    size = int(math.sqrt( x**2 + y**2 + z**2 )) + 1 # 0.5 * 2 = 1.
-    cube = vol(size, size, size)
-    
-    sx, sy, sz = int((size-x)/2), int((size-y)/2), int((size-z)/2) 
-    for i in range(x):
-        for j in range(y):
-            for k in range(z):
-                cube.setV( cuboid.getV(i, j, k), i+sx, j+sy, k+sz )
-    cube.write(cubePath)
-
-def volumeOutliner(inputVolumes, outlineValue=10):
-    for inputVolume in inputVolumes:
-        x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
-        for i in range(x):
-            inputVolume.setV(outlineValue, i, 0,0)
-            inputVolume.setV(outlineValue, i, y-1,0)
-            inputVolume.setV(outlineValue, i, 0,z-1)
-            inputVolume.setV(outlineValue, i, y-1,z-1)
-        for i in range(y):
-            inputVolume.setV(outlineValue, 0, i,0)
-            inputVolume.setV(outlineValue, x-1, i,0)
-            inputVolume.setV(outlineValue, 0, i,z-1)
-            inputVolume.setV(outlineValue, x-1, i,z-1)
-        for i in range(z):
-            inputVolume.setV(outlineValue, 0, 0,i)
-            inputVolume.setV(outlineValue, x-1, 0,i)
-            inputVolume.setV(outlineValue, 0, y-1,i)
-            inputVolume.setV(outlineValue, x-1, y-1,i)
-
-def volumeListWriter(inputVolumes, outputDir, Description):
-    index = 0
-    for inputVolume in inputVolumes:
-        inputVolume.write(f"{outputDir}/{Description}_{index}.em")
-        index += 1
+#  Main Code Workspace
 ##########################################################################################################################################################################
 SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
 SHREC2021_FULLex5mrc = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2" ]
@@ -859,18 +794,22 @@ SHREC2021_1bxn = [ "1bxn" ]
 
 # FROM PDB ID -> Resolution corrected Compact Cuboid!
 def resolutionResizeUnity(volume, identifier, resolution, outputDir, toResolution):
+    if resolution > toResolution:
+        raise RuntimeError(f"Target resolution {toResolution} is smaller than Resolution {resolution}. PDBID is {identifier}")
+    
     outputVolumePath = f"{outputDir}/{identifier}.em"
-    # Assume input is cube form!!
+    
     X, Y, Z = volume.sizeX(), volume.sizeY(), volume.sizeZ()
-    resizedSize = math.ceil( (volume.sizeX() - 1)*resolution / toResolution ) 
-    outputVolume = vol(resizedSize, resizedSize, resizedSize)
+    resizedSizeX = math.ceil( (volume.sizeX() - 1) * resolution / toResolution ) 
+    resizedSizeY = math.ceil( (volume.sizeY() - 1) * resolution / toResolution ) 
+    resizedSizeZ = math.ceil( (volume.sizeZ() - 1) * resolution / toResolution ) 
+    outputVolume = vol(resizedSizeX, resizedSizeY, resizedSizeZ)
     outputVolume.setAll(0.0)
-    print(f" BEFORE SIZE : {volume.sizeX()} x {volume.sizeY()} x {volume.sizeZ()}")
-    print(f" AFTER SIZE : {outputVolume.sizeX()} x {outputVolume.sizeX()} x {outputVolume.sizeX()}")
-    # interpolate.
-    for i in range(resizedSize):
-        for j in range(resizedSize):
-            for k in range(resizedSize):
+    # print(f" BEFORE SIZE : {volume.sizeX()} x {volume.sizeY()} x {volume.sizeZ()}")
+    # print(f" AFTER SIZE : {outputVolume.sizeX()} x {outputVolume.sizeY()} x {outputVolume.sizeZ()}")
+    for i in range(resizedSizeX):
+        for j in range(resizedSizeY):
+            for k in range(resizedSizeZ):
                 curVal = 0.0
 
                 realcoord_i   =   i   * toResolution
