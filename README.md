@@ -15,13 +15,12 @@
 6. random rotation with middle efficiency.
 7. PYTOM's em2mrc generates mrc file much faster. [ for certain file(1_withoutrotation.em) : 99s vs 6.6s ]
    1. But, mrcfile.validate -> false.
-   2. File size is much Larger : 134.2M vs 536.9M
-8. Resolution adjustment
-
-
+   2. int mode mrc generated. -> File size is efficient : 134.2M vs 536.9M
+8. Dimension adjustment
+   1. maybe just 1 A -> 10 A(1 nm)
 
 ### Working.   
-1. Rotation : 3 option - no rotation / with stride parameter [ saved ] / with stride parameter [ unsaved ]
+1. Rotation : with stride parameter [ saved ] / with stride parameter [ unsaved ]
 2. Image formation options...
 3. multi particle generator?
    1. crowd scenario generator   

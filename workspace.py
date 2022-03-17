@@ -9,7 +9,8 @@ import mrcfile
 import os.path, wget, re, requests, math, random, time, json
 
 # My Other files
-from utils import volumeOutliner
+from utils import volumeOutliner, volumeListWriter
+# from pytomLib import recenterVolume, naivePDBParser, mmCIFParser, vol, initSphere, WedgeInfo
 
 rootDIR = "/cdata"
 pdbDataDIR = f"{rootDIR}/pdbData"
@@ -524,12 +525,13 @@ def getMedadataJsonTemplate():
         "noiseInfo": None
     }
 
-def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", toSave=True, cubeSize=128, pfailedAttempts=9000, pparticleNum=1600, isRotation=False, verbose=False):
+def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", toSave=True, withClassMask=False, tomoSize=128, pfailedAttempts=9000, pparticleNum=1600, isRotation=False, verbose=False):
     # cuboidalOccupancyList = [['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]]]
     startTime = time.time()
     scenarioMetaDataFile = f"{scenarioDir}/{scenarioIdentifier}.txt"
     scenarioJsonFile = f"{scenarioDir}/{scenarioIdentifier}.json"
     scenarioVolumeFile = f"{scenarioDir}/{scenarioIdentifier}.em"
+    classmaskFile = f"{scenarioDir}/{scenarioIdentifier}_class_mask.em"
 
     jsonMetadataObject = getMedadataJsonTemplate()
     jsonMetadataObject["header"] = "TESTING"
@@ -540,9 +542,15 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     jsonMetadataObject["noiseInfo"] = "Just White Noise(Gaussian)"
 
     f = open(scenarioMetaDataFile, 'w')
-    fulltomX, fulltomY, fulltomZ = 2*cubeSize, 2*cubeSize, 2*cubeSize
+    fulltomX, fulltomY, fulltomZ = 2*tomoSize, 2*tomoSize, 2*tomoSize
     volume = vol(fulltomX, fulltomY, fulltomZ)
     volume.setAll(0.0)
+
+    if withClassMask:
+        class_mask = vol(fulltomX, fulltomY, fulltomZ)
+        class_mask.setAll(0)
+    else:
+        class_mask = None
     
     failedAttempts = 0
     particleNum = 0
@@ -569,6 +577,10 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
                 curVal = rotatedVol.getV(i,j,k)
                 if curVal != 0.0:
                     volume.setV( curVal , x+i, y+j, z+k)
+
+                    if withClassMask:
+                        withClassMask.setV( classNum, x+i, y+j, z+k)
+                    
                     occupyVoxels.append( [x+i, y+j, z+k] )
     
     jsonMetadataObject["particles"].append( [ classNum, occupyVoxels ] )
@@ -593,7 +605,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
             else:
                 rotFailNum+=1
         else:
-            classNum = np.random.randint(low=0, high=len(pdbIDList)) #TODO NUMPY.
+            classNum = np.random.randint(low=0, high=len(pdbIDList))
             currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
             currentVol = read(currentTemplate)
             rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
@@ -619,6 +631,10 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
                         curVal = rotatedVol.getV(i,j,k)
                         if curVal != 0: # TODO
                             volume.setV( curVal, x+i, y+j, z+k)
+
+                            if withClassMask:
+                                withClassMask.setV( classNum, x+i, y+j, z+k)
+
                             occupyVoxels.append( [x+i, y+j, z+k] )
     
             jsonMetadataObject["particles"].append( [ classNum, occupyVoxels ] )
@@ -642,11 +658,14 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     # -----------------
     if toSave:
         volume.write(scenarioVolumeFile)
+        if withClassMask:
+            class_mask.write(classmaskFile)
     else:
-        return volume
+        return volume, class_mask
 
-def makeGrandModelByPDBIDs(pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="noname", toResolution=10.0, SNR=0.1, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, isRotation=False, verbose=False):
+def makeGrandModelByPDBIDs(pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="noname", withClassMask=True, toResolution=10.0, SNR=0.1, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, isRotation=False, verbose=False):
     targetPath = f"{scenarioDir}/{scenarioIdentifier}.em"
+    maskPath = f"{scenarioDir}/{scenarioIdentifier}_class_mask.em"
     # First, PDB IDs -> PDB files -> Volume(.em) List
     print("makeGrandModelByPDBIDs : 1. prepare volume object from the Internet. -----------")
     volumes, resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, volumeDir=volumeDir, toCompact=True, overwrite=True, verbose=True)
@@ -655,22 +674,24 @@ def makeGrandModelByPDBIDs(pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioId
     # Second, Resolution adjustment.
     print("makeGrandModelByPDBIDs : 2. resize volume object with respect to resolution. ---")
     for pdbID, volume, resolution in zip(pdbIDList, volumes, resolutions):
-        resolutionResizeUnity(volume, pdbID, resolution, volumeDir, toResolution)
+        resolutionResizeUnity(volume, pdbID, 1.0, volumeDir, toResolution)
     
     # Now, volume file is ready.
     print("makeGrandModelByPDBIDs : 3. make grandmodel. -----------------------------------")
-    volume = makeScenarioByPDBIDs(pdbIDList, volumeDir, toSave=False, scenarioDir=scenarioDir, scenarioIdentifier=scenarioIdentifier, cubeSize=tomoSize, pfailedAttempts=pfailedAttempts, pparticleNum=pparticleNum, isRotation=isRotation, verbose=verbose)
+    volume, class_mask = makeScenarioByPDBIDs(pdbIDList, volumeDir, toSave=False, withClassMask=withClassMask, scenarioDir=scenarioDir, scenarioIdentifier=scenarioIdentifier, tomoSize=tomoSize, pfailedAttempts=pfailedAttempts, pparticleNum=pparticleNum, isRotation=isRotation, verbose=verbose)
 
     # Now, tomogram is ready.
     print("makeGrandModelByPDBIDs : 4. make noise. ----------------------------------------")
     noisedVolume = noiseApplier(volume, SNR=SNR)
     noisedVolume.write(targetPath)
+    class_mask.write(mastPath)
 ##########################################################################################################################################################################
 #  Section for Simulation.
-def compactRandomRotation(inputVolume):
+def compactRandomRotation(inputVolume, rotationStep = 1, toSave = False):
     global called
     called+=1
-    phi, theta, psi = np.random.randint(low=0, high=360, size=(3,)) # High exclusive
+    #phi, theta, psi = np.random.randint(low=0, high=360, size=(3,)) # High exclusive
+    phi, theta, psi = random.randrange(0, 359, rotationStride),random.randrange(0, 360, rotationStride),random.randrange(0, 360, rotationStride) # High inclusive. For step.
     from pytom_volume import rotate
     rotatedVolume = vol(inputVolume.sizeX(),inputVolume.sizeY(),inputVolume.sizeZ())
     rotatedVolume.setAll(0.0)
@@ -785,6 +806,59 @@ def noiseApplier(volume, SNR=0.1):
     
     return noisyCopy
 
+def subtomoSampler(identifier, scenarioDir, crowdLevel, generateNum=1, subtomoSizeX=50, subtomoSizeY=0, subtomoSizeZ=0):
+    # Missing size is filled with X axis.
+    if subtomoSizeY == 0:
+        subtomoSizeY = subtomoSizeX
+    if subtomoSizeZ == 0:
+        subtomoSizeZ = subtomoSizeX
+    
+    scenarioVolume = read(f'{scenarioDir}/{identifier}.em')
+    particleCenters = []
+    with open(f'{scenarioDir}/{identifier}.txt') as scenarioParticleTxt:
+        txt_contents = scenarioParticleTxt.readlines()
+        particleTxtPattern = re.compile("(.*),(.*),(.*),(.*),(.*),(.*),(.*)")
+        for line in txt_contents:
+            parsedInfo = re.findall(particleTxtPattern, line)[0]
+            particleCenter = [ parsedInfo[0], parsedInfo[1], parsedInfo[2], parsedInfo[3] ]
+            particleCenters.append(particleCenter)
+        
+    subtomos = []
+    for i in range(generateNum):
+        subtomo = vol(subtomoSizeX, subtomoSizeY, subtomoSizeZ)
+        subtomo.setAll(0.0)
+
+        if True: # type1 : just pick the center of the particle.
+            # np.random.randint :: low exclusive high inclusive
+            particleInfo = particleCenters[ np.random.randint(low = 0, high = len(particleCenters)) ]
+            cX, cY, cZ = int(float(particleInfo[1])), int(float(particleInfo[2])), int(float(particleInfo[3]))
+        
+        if cX <= subtomoSizeX/2:
+            lrX = 0
+        elif cX >= scenarioVolume.sizeX() - subtomoSizeX/2:
+            lrX = scenarioVolume.sizeX() - subtomoSizeX
+        else:
+            lrX = cX - subtomoSizeX//2
+        if cY <= subtomoSizeY/2:
+            lrY = 0
+        elif cY >= scenarioVolume.sizeY() - subtomoSizeY/2:
+            lrY = scenarioVolume.sizeY() - subtomoSizeY
+        else:
+            lrY = cY - subtomoSizeY//2
+        if cZ <= subtomoSizeZ/2:
+            lrZ = 0
+        elif cZ >= scenarioVolume.sizeZ() - subtomoSizeZ/2:
+            lrZ = scenarioVolume.sizeZ() - subtomoSizeZ
+        else:
+            lrZ = cZ - subtomoSizeZ//2
+        
+        for x in range(subtomoSizeX):
+            for y in range(subtomoSizeY):
+                for z in range(subtomoSizeZ):
+                    subtomo.setV( scenarioVolume.getV( lrX + x , lrY + y, lrZ + z ), x, y, z)
+        
+        subtomos.append(subtomo)
+    return subtomos
 ##########################################################################################################################################################################
 #  Main Code Workspace
 ##########################################################################################################################################################################
@@ -848,7 +922,9 @@ def resolutionResizeUnity(volume, identifier, resolution, outputDir, toResolutio
                             idxZ += 1
                         idxY += 1
                     idxX += 1
-                outputVolume.setV(curVal, i, j, k)
+                
+                modfactor = resolution / toResolution
+                outputVolume.setV(curVal * modfactor , i, j, k)
     outputVolume.write(outputVolumePath)
 
 if __name__ == "__main__":
@@ -858,7 +934,7 @@ if __name__ == "__main__":
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
     appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "5_1_json format test"
+    DESCRIPTION = "5_2_subtomo sampler test"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
     # 01 Work : Just test tomogram without rotation. #######################################################################
@@ -892,9 +968,12 @@ if __name__ == "__main__":
     # volumeOutliner(volList, outlineValue = 300)
     # volumeListWriter(volList, "/cdata/outlined", "0313_UNITY")
     #######################################################################################################################
-    ov = volumeOutliner("/cdata/scenario/0315_merge2.em", isFile=True, outlineValue = 500)
-    ov.write("/cdata/outlined/0315_merge2_utilstest.em")
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution2", "/cdata/scenario", "0315_merge2", 10.0, SNR=1.0, tomoSize=256, pfailedAttempts=6000, pparticleNum=1000, isRotation=True, verbose=False)
+    #ov = volumeOutliner("/cdata/scenario/0315_merge2.em", isFile=True, outlineValue = 500)
+    #ov.write("/cdata/outlined/0315_merge2_utilstest.em")
+    
+    #sl = subtomoSampler("0315_merge2", "/cdata/scenario", 10, generateNum=10, subtomoSizeX=50)
+    #volumeListWriter(sl, "/cdata/scenario", "0317_subtomo")
+    makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution3", "/cdata/scenario", "0317_res1_mask", 10.0, SNR=1.5, tomoSize=256, pfailedAttempts=10000, pparticleNum=2000, isRotation=True, verbose=True)
 
     #makeScenarioByPDBIDs(SHREC2021_FULL, "/cdata/resolution2", "/cdata/scenario", "0315_json3", cubeSize=256, pfailedAttempts=9000, pparticleNum=1600, overwrite=False, isRotation=True, verbose=True)
     #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge40.em", snrValue=1000., wedgeAngle=40, shift=None)
