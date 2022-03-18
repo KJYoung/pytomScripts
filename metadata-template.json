@@ -9,8 +9,9 @@
             "occupyVoxels": [ [ "x", "y", "z" ] ]
         }],
     "noiseInfo": "STRING"
-},
-    "v4": {
+    },
+    
+    "v4-current": {
         "header" : "STRING",
         "pdbIDs": "STRING LIST",
         "resolutions": "FLOAT LIST",

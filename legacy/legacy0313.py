@@ -104,3 +104,27 @@ def compactCuboid2rotateCube(cuboidPath, cubePath):
             for k in range(z):
                 cube.setV( cuboid.getV(i, j, k), i+sx, j+sy, k+sz )
     cube.write(cubePath)
+
+def customSimulation(volumePath, simulatedPath=None, snrValue=0.1, rotation=None, wedgeAngle=None, shift=None):
+    # Rotation : [ x axis , z axis , y axis ]
+    wedge = 0.0
+    shiftList = [0, 0, 0]
+
+    v = read(volumePath)
+    if rotation == None:
+        rotation = [0, 0, 0]
+    
+    if wedgeAngle == None:
+        wi = None
+    else:
+        wi = WedgeInfo(wedgeAngle=wedgeAngle, cutoffRadius=0.0)
+    if not shift == None:
+        shiftList = shift
+    
+    s = simpleSimulation( volume=v, rotation=rotation, shiftV=shiftList, wedgeInfo=wi, SNR=snrValue)
+    if simulatedPath:
+        s.write(simulatedPath)
+    
+    appendMetaDataln(f"customSimulation is done : inputfile is {volumePath} / outputfile is {simulatedPath}")
+    appendMetaDataln(f"-snr : {snrValue}, rotation : {rotation}, wedgeAngle : {wedgeAngle}, shift : {shift}")
+    return s

@@ -1,5 +1,6 @@
 from pytom.basic.files import read
 from pytom_volume import vol
+import json
 ################################
 # matrixToVolLayerX, Y, Z
 # volumeOutliner
@@ -49,8 +50,16 @@ def volumeOutliner(inputVolumes, isFile=False, outlineValue=10):
     if isFile:
         return inputVolumes[0]
 
-def volumeListWriter(inputVolumes, outputDir, Description):
+def volumeListWriter(inputVolumes, outputDir, Description, JSON=None):
     index = 0
-    for inputVolume in inputVolumes:
-        inputVolume.write(f"{outputDir}/{Description}_{index}.em")
-        index += 1
+    if JSON:
+        for inputVolume, jsonOb in zip(inputVolumes, JSON):
+            inputVolume.write(f"{outputDir}/{Description}_{index}.em")
+            json.dump(jsonOb, f"{outputDir}/{Description}_{index}.json")
+
+            index += 1
+    else:
+        for inputVolume in inputVolumes:
+            inputVolume.write(f"{outputDir}/{Description}_{index}.em")
+            
+            index += 1
