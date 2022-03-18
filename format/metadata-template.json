@@ -11,12 +11,26 @@
     "noiseInfo": "STRING"
     },
     
-    "v4-current": {
+    "v4": {
         "header" : "STRING",
         "pdbIDs": "STRING LIST",
         "resolutions": "FLOAT LIST",
         "resolution": "FLOAT",
         "particles": [ [ "classNum", [[ "x", "y", "z"], [ "x", "y", "z"]]] ],
         "noiseInfo": "STRING"
+    },
+
+    "v5": {
+        "header" : "STRING",
+        "pdbIDs" : "STRING LIST",
+        "resolutions" : "FLOAT LIST",
+        "particles" : [ 
+            {
+                "classNum" : "INT",
+                "min"      : [ "x", "y", "z" ],
+                "max"      : [ "x", "y", "z" ],
+                "coord"    : [ [ "x", "y", "z" ] ]
+            }
+        ]
     }
 }
