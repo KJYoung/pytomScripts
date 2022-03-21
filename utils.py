@@ -55,7 +55,8 @@ def volumeListWriter(inputVolumes, outputDir, Description, JSON=None):
     if JSON:
         for inputVolume, jsonOb in zip(inputVolumes, JSON):
             inputVolume.write(f"{outputDir}/{Description}_{index}.em")
-            json.dump(jsonOb, f"{outputDir}/{Description}_{index}.json")
+            with open(f"{outputDir}/{Description}_{index}.json", "w") as json_file:
+                json.dump(jsonOb, json_file)
 
             index += 1
     else:

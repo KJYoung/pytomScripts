@@ -535,9 +535,9 @@ def minmaxUpdate(minList, maxList, coordList):
             maxList[i] = coordList[i]
 
 def checkOverlap(minList, maxList, curList):
-    if  minList[0] < curList[0] and curList[0] < maxList[0] and \
-        minList[1] < curList[1] and curList[1] < maxList[1] and \
-        minList[2] < curList[2] and curList[2] < maxList[2] :
+    if  minList[0] <= curList[0] and curList[0] <= maxList[0] and \
+        minList[1] <= curList[1] and curList[1] <= maxList[1] and \
+        minList[2] <= curList[2] and curList[2] <= maxList[2] :
         return True
     
     return False
@@ -552,8 +552,6 @@ def findMinMaxByList(list):
             if max[j] < i[j]:
                 max[j] = i[j]
     return min, max
-
-
 
 def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", toSave=True, withClassMask=False, tomoSize=128, pfailedAttempts=9000, pparticleNum=1600, rotationStep=0, JSONCOMPACT=True, verbose=False):
     # cuboidalOccupancyList = [['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]]]
@@ -600,7 +598,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
 
     occupyVoxels = []
     minCoord = [ 4*tomoSize, 4*tomoSize, 4*tomoSize ]
-    maxCoord = [ -1, -1, 1]
+    maxCoord = [ -1, -1, -1]
     for i in range(sizeX):
         for j in range(sizeY):
             for k in range(sizeZ):
@@ -626,7 +624,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     while failedAttempts < pfailedAttempts and particleNum < pparticleNum:
         occupyVoxels = []
         minCoord = [ 4*tomoSize, 4*tomoSize, 4*tomoSize ]
-        maxCoord = [ -1, -1, 1]
+        maxCoord = [ -1, -1, -1]
 
         if verbose and failedAttempts%500 == 0 and failedAttempts != 0:
             print(f"... Now failed Attemps are {failedAttempts}")   
@@ -807,7 +805,7 @@ def noiseApplier(volume, SNR=0.1):
     
     return noisyCopy
 
-def subtomoSampler(identifier, scenarioDir, crowdLevel, generateNum=1, subtomoSizeX=50, subtomoSizeY=0, subtomoSizeZ=0):
+def subtomoSampleSaver(identifier, scenarioDir, subtomoIdentifier, subtomoDir, crowdLevel, SNR=1.0, generateNum=1, subtomoSizeX=50, subtomoSizeY=0, subtomoSizeZ=0):
     # Missing size is filled with X axis.
     if subtomoSizeY == 0:
         subtomoSizeY = subtomoSizeX
@@ -834,15 +832,12 @@ def subtomoSampler(identifier, scenarioDir, crowdLevel, generateNum=1, subtomoSi
         json_object = json.load(scenarioJsonFile)
         particleJsonList = json_object['particles']
         pdbIDList = json_object['pdbIDs']
-        
-    subtomos = []
-    jsons = []
-    particleList = []
 
+    particleList = []
     index = 0
     for i in range(generateNum):
         jsonMetadataObject = getMedadataJsonTemplate()
-        jsonMetadataObject["header"] = f"resolution : {10.0} with white noise"
+        jsonMetadataObject["header"] = f"{10.0}A/vx with white noise"
         jsonMetadataObject["pdbIDs"] = pdbIDList
         jsonMetadataObject["resolutions"] = [5.0]
         jsonMetadataObject["particles"] = []
@@ -881,22 +876,24 @@ def subtomoSampler(identifier, scenarioDir, crowdLevel, generateNum=1, subtomoSi
                     subtomo.setV( getValue , x, y, z)
 
                     if getValue != 0:
+                        debug1 = []
                         for particle in particleJsonList:
+                            
                             minList = particle['min']
                             maxList = particle['max']
                             curCord = [ lrX + x, lrY + y, lrZ + z]
-
+                
+                            debug1.append( [ minList, maxList, curCord ])
                             if checkOverlap(minList, maxList, curCord):
-                                # This Particle!
-                                #print("index(particle)", particleJsonList.index(particle))
-                                #print("min --------- \n", minList)
-                                #print("max --------- \n", maxList)
-                                #print("cur --------- \n", curCord)
                                 particleList.append( [  particleJsonList.index(particle), [x,y,z] ] )
                                 break
-                            if particle == particleJsonList[-1]:
-                                #print("Noise!")
-                                pass
+                        else:
+                            print( getValue , f" {[ lrX + x, lrY + y, lrZ + z]} has the problem")
+                            print( debug1 )
+                            raise RuntimeError("SHOULD not happen.")
+        
+        subtomo = noiseApplier(subtomo, SNR=SNR)
+        
         particleKeys = []
         particleDicts = []
         particleIDList = []
@@ -912,18 +909,18 @@ def subtomoSampler(identifier, scenarioDir, crowdLevel, generateNum=1, subtomoSi
                 particleDicts.append( { "particleID" : p[0], "min" : [] , "max" : [] ,  "coord": [ p[1] ] } )
         
         for p in particleDicts:
-            # particleIDList.append(p['classNum'])
             p['min'], p['max'] = findMinMaxByList(p['coord'])
             p['classNum'] = particleJsonList[  p['particleID'] ]['classNum']
             # del p['particleID']
 
-        #print(particleDicts)
         jsonMetadataObject["particles"] = particleDicts
-        subtomos.append(subtomo)
-        jsons.append(jsonMetadataObject)
-        print(f"--------- subtomogram generated : {index}")
+
         index += 1
-    return subtomos, jsons
+        print(f"--------- subtomogram generated : {index}")
+        subtomo.write(f"{subtomoDir}/{subtomoIdentifier}_{index}.em")
+        with open(f"{subtomoDir}/{subtomoIdentifier}_{index}.json", "w") as json_file:
+                json.dump(jsonMetadataObject, json_file)
+
 ##########################################################################################################################################################################
 #  Main Code Workspace
 ##########################################################################################################################################################################
@@ -941,28 +938,25 @@ if __name__ == "__main__":
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
     appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "5_2_subtomo sampler test"
+    DESCRIPTION = "6__subtomo test data"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
     #######################################################################################################################
     #ov = volumeOutliner("/cdata/scenario/0315_merge2.em", isFile=True, outlineValue = 500)
     #ov.write("/cdata/outlined/0315_merge2_utilstest.em")
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution3", "/cdata/scenario", "0318_2_gmwoN_5.0compact", 10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=2200, rotationStep=2, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution3", "/cdata/scenario", "0318_2_gmwoN_5.0verbose", 10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=2200, rotationStep=2, JSONCOMPACT=False, verbose=True)
-    sl, js = subtomoSampler("0318_2_gmwoN_5.0compact", "/cdata/scenario", 2, generateNum=3, subtomoSizeX=50)
-    volumeListWriter(sl, "/cdata/scenario", "0318_2_6gmwoN_5.0compact_subtomo", JSON=js)
-    #makeScenarioByPDBIDs(SHREC2021_FULL, "/cdata/resolution2", "/cdata/scenario", "0315_json3", cubeSize=256, pfailedAttempts=9000, pparticleNum=1600, overwrite=False, isRotation=True, verbose=True)
-    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge40.em", snrValue=1000., wedgeAngle=40, shift=None)
-    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge60.em", snrValue=1000., wedgeAngle=60, shift=None)
-    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-4_resolutionSIM1000wedge70.em", snrValue=1000., wedgeAngle=70, shift=None)
-    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-3_resolutionSIM1.0.em", snrValue=1., wedgeAngle=None, shift=None)
-    #customSimulation("/cdata/scenario/0314_resolution.em", simulatedPath="/cdata/scenario/0314-3_resolutionSIM0.1.em", snrValue=.1, wedgeAngle=None, shift=None)
-    #resolutionResize("/cdata/pdbData/1bxn.pdb", "/cdata/singleParticleEM_cube/1bxn.em", 10.0, "/cdata/resolution/1bxn.em")
-    #resolutionResize("/cdata/pdbData/5mrc.cif", "/cdata/singleParticleEM_cube/5mrc.em", 10.0, "/cdata/resolution/5mrc.em")
-
-    #print(f" 1 : {time2 - time1}")
-    #print(f" 2 : {time3 - time2}")
-    #appendMetaDataln(f"called num of compact rotation {called}")
+    # for test dataset 2.
+    # for - grandmodel.
+    # makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0321_gmwoN_5.0compact", 10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=2200, rotationStep=2, JSONCOMPACT=True, verbose=True)
+    # makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0321_gmwoN_5.0verbose", 10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=2200, rotationStep=2, JSONCOMPACT=False, verbose=True)
+    
+    # for - subtomogram.
+    # previous approach.
+    # sl, js = subtomoSampler("0321_gmwoN_5.0compact", "/cdata/scenario", 2, generateNum=3, subtomoSizeX=50)
+    # volumeListWriter(sl, "/cdata/scenario", "0318_2_6gmwoN_5.0compact_subtomo", JSON=js)
+    # unified approach.
+    subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0321_gmwoN_5.0compact_1", "/cdata/subtomo", 0, SNR=1.0, generateNum=10, subtomoSizeX=50)
+    subtomoSampleSaver("0321_gmwoN_5.0verbose", "/cdata/scenario", "0321_gmwoN_5.0verbose_1", "/cdata/subtomo", 0, SNR=1.0, generateNum=10, subtomoSizeX=50)
+    
     ################### Workspace Ended #############
     print(f" All of the Jobs completed with elapsed time : {time.time()-executionStart}")
     #################### Program Ended ##############
