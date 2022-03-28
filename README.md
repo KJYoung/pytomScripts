@@ -1,4 +1,5 @@
 ## Repository for the Tomogram simulation based on PyTom
+This scripts are under development. Not optimized code.
 
 ### Done.
 1. volume object(and .em file) generator from given PDB ID(.pdb, .cif both supported).   

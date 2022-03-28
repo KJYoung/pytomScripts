@@ -1,4 +1,3 @@
-from pytom.basic.files import recenterVolume, naivePDBParser, mmCIFParser, read
 from pytom_volume import vol, initSphere
 from pytom.basic.structures import WedgeInfo
 
@@ -9,7 +8,8 @@ import mrcfile
 import os.path, wget, re, requests, math, random, time, json
 
 # My Other files
-from utils import volumeOutliner, volumeListWriter
+from utils import volumeOutliner, volumeListWriter, volObj2Numpy, newNumpyByXYZ, volume2MRC
+from pytomLib import recenterVolume, naivePDBParser, mmCIFParser, read, noiseApplier
 # from pytomLib import recenterVolume, naivePDBParser, mmCIFParser, vol, initSphere, WedgeInfo
 
 rootDIR = "/cdata"
@@ -397,28 +397,6 @@ def getResolution(filePath):
 def getResolutionsByID(pdbIDList):
     pass
 
-def volume2MRC(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False):
-    inputVolume = read(volPath)
-    x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
-    if verbose:
-        print(f"Volume dimension is initially... {x}x{y}x{z}")
-    
-    if floatMRC:
-        volumeData = np.empty([x, y, z], dtype = np.float32)
-    else:
-        volumeData = np.empty([x, y, z], dtype = np.int8)
-    
-    for i in range(inputVolume.sizeX()):
-        for j in range(inputVolume.sizeY()):
-            for k in range(inputVolume.sizeZ()):
-                #print(type(inputVolume.getV(i,j,k)))
-                volumeData[i,j,k] = inputVolume.getV(i,j,k)
-    
-    with mrcfile.new(mrcPath, overwrite=overwrite) as mrc:
-        mrc.set_data(volumeData)
-        print(f"mrc data dimension is converted to... {mrc.data.shape}")
-    return
-
 def wgetByPDBID(pdbID, pdbDir):
     pdbPath = f"{pdbDir}/{pdbID}.pdb"
     cifPath = f"{pdbDir}/{pdbID}.cif"
@@ -568,6 +546,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     jsonMetadataObject["particles"] = []
 
     f = open(scenarioMetaDataFile, 'w')
+    f.write("PDBID,centerX,centerY,centerZ,phi,theta,psi\n")
     fulltomX, fulltomY, fulltomZ = 2*tomoSize, 2*tomoSize, 2*tomoSize
     volume = vol(fulltomX, fulltomY, fulltomZ)
     volume.setAll(0.0)
@@ -795,16 +774,6 @@ def resolutionResizeUnity(volume, identifier, resolution, outputDir, toResolutio
                 outputVolume.setV(curVal * modfactor , i, j, k)
     outputVolume.write(outputVolumePath)
 
-def noiseApplier(volume, SNR=0.1):
-    from pytom_volume import vol
-    from pytom.simulation import whiteNoise
-    
-    c = vol(volume.sizeX(),volume.sizeY(),volume.sizeZ())
-    c.copyVolume(volume)
-    noisyCopy = whiteNoise.add(c,SNR)
-    
-    return noisyCopy
-
 def subtomoSampleSaver(identifier, scenarioDir, subtomoIdentifier, subtomoDir, crowdLevel, SNR=1.0, generateNum=1, subtomoSizeX=50, subtomoSizeY=0, subtomoSizeZ=0):
     # Missing size is filled with X axis.
     if subtomoSizeY == 0:
@@ -833,9 +802,12 @@ def subtomoSampleSaver(identifier, scenarioDir, subtomoIdentifier, subtomoDir, c
         particleJsonList = json_object['particles']
         pdbIDList = json_object['pdbIDs']
 
-    particleList = []
-    index = 0
     for i in range(generateNum):
+        particleList = []
+        metadataParticleListTXT = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}_particles.txt"
+        subtomoMRCFile = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}.mrc"
+        subtomoJSONFile = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}.json"
+
         jsonMetadataObject = getMedadataJsonTemplate()
         jsonMetadataObject["header"] = f"{10.0}A/vx with white noise"
         jsonMetadataObject["pdbIDs"] = pdbIDList
@@ -873,9 +845,9 @@ def subtomoSampleSaver(identifier, scenarioDir, subtomoIdentifier, subtomoDir, c
             for y in range(subtomoSizeY):
                 for z in range(subtomoSizeZ):
                     getValue = scenarioVolume.getV( lrX + x , lrY + y, lrZ + z )
-                    subtomo.setV( getValue , x, y, z)
-
-                    if getValue != 0:
+                    
+                    if getValue != 0.0 :
+                        subtomo.setV( getValue , x, y, z)
                         debug1 = []
                         for particle in particleJsonList:
                             
@@ -888,8 +860,6 @@ def subtomoSampleSaver(identifier, scenarioDir, subtomoIdentifier, subtomoDir, c
                                 particleList.append( [  particleJsonList.index(particle), [x,y,z] ] )
                                 break
                         else:
-                            print( getValue , f" {[ lrX + x, lrY + y, lrZ + z]} has the problem")
-                            print( debug1 )
                             raise RuntimeError("SHOULD not happen.")
         
         subtomo = noiseApplier(subtomo, SNR=SNR)
@@ -908,18 +878,35 @@ def subtomoSampleSaver(identifier, scenarioDir, subtomoIdentifier, subtomoDir, c
                 particleKeys.append( p[0] )
                 particleDicts.append( { "particleID" : p[0], "min" : [] , "max" : [] ,  "coord": [ p[1] ] } )
         
+        index = 1
+        mrcSubtomo = volObj2Numpy(subtomo, floatMRC = True)
+        f = open(metadataParticleListTXT, 'w')
+        f.write("index,classNum,particleID\n")
         for p in particleDicts:
             p['min'], p['max'] = findMinMaxByList(p['coord'])
             p['classNum'] = particleJsonList[  p['particleID'] ]['classNum']
+            f.write( f"{index},{p['classNum']},{p['particleID']}\n")
             # del p['particleID']
+            mrcFileName = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}_subtomoParticle_{index}.mrc"
+            subtomoP = newNumpyByXYZ(subtomoSizeX, subtomoSizeY, subtomoSizeZ, floatMRC = False) # Minimizing space -> integer.
+            for particleCoord in p['coord']:
+                subtomoP[particleCoord[0], particleCoord[1], particleCoord[2]] = 10 
+            # Write each particle MRC metadata.
+            with mrcfile.new(mrcFileName, overwrite=True) as mrc:
+                mrc.set_data(subtomoP)
+            index+=1
+        f.close()
 
         jsonMetadataObject["particles"] = particleDicts
 
-        index += 1
-        print(f"--------- subtomogram generated : {index}")
-        subtomo.write(f"{subtomoDir}/{subtomoIdentifier}_{index}.em")
-        with open(f"{subtomoDir}/{subtomoIdentifier}_{index}.json", "w") as json_file:
-                json.dump(jsonMetadataObject, json_file)
+        print(f"--------- subtomogram generated : {i + 1}")
+        
+        # Write Subtomo MRC.
+        with mrcfile.new(subtomoMRCFile, overwrite=True) as mrc:
+            mrc.set_data(mrcSubtomo)
+        # Write Subtomo Json metadata.
+        with open(subtomoJSONFile, "w") as json_file:
+            json.dump(jsonMetadataObject, json_file)
 
 ##########################################################################################################################################################################
 #  Main Code Workspace
@@ -954,9 +941,9 @@ if __name__ == "__main__":
     # sl, js = subtomoSampler("0321_gmwoN_5.0compact", "/cdata/scenario", 2, generateNum=3, subtomoSizeX=50)
     # volumeListWriter(sl, "/cdata/scenario", "0318_2_6gmwoN_5.0compact_subtomo", JSON=js)
     # unified approach.
-    subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0321_gmwoN_5.0compact_1", "/cdata/subtomo", 0, SNR=1.0, generateNum=10, subtomoSizeX=50)
-    subtomoSampleSaver("0321_gmwoN_5.0verbose", "/cdata/scenario", "0321_gmwoN_5.0verbose_1", "/cdata/subtomo", 0, SNR=1.0, generateNum=10, subtomoSizeX=50)
-    
+    #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0321_gmwoN_5.0compact_1", "/cdata/subtomo", 0, SNR=1.0, generateNum=10, subtomoSizeX=50)
+    #subtomoSampleSaver("0321_gmwoN_5.0verbose", "/cdata/scenario", "0321_gmwoN_5.0verbose_1", "/cdata/subtomo", 0, SNR=1.0, generateNum=10, subtomoSizeX=50)
+    subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0328_gmwoN_5.0wonoise_4", "/cdata/subtomo", 0, SNR=-1, generateNum=10, subtomoSizeX=50)
     ################### Workspace Ended #############
     print(f" All of the Jobs completed with elapsed time : {time.time()-executionStart}")
     #################### Program Ended ##############

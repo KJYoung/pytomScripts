@@ -1,6 +1,7 @@
 from pytom.basic.files import read
 from pytom_volume import vol
 import json
+import numpy as np
 ################################
 # matrixToVolLayerX, Y, Z
 # volumeOutliner
@@ -64,3 +65,49 @@ def volumeListWriter(inputVolumes, outputDir, Description, JSON=None):
             inputVolume.write(f"{outputDir}/{Description}_{index}.em")
             
             index += 1
+
+def volume2MRC(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False):
+    inputVolume = read(volPath)
+    x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
+    if verbose:
+        print(f"Volume dimension is initially... {x}x{y}x{z}")
+    
+    if floatMRC:
+        volumeData = np.zeros([x, y, z], dtype = np.float32)
+    else:
+        volumeData = np.zeros([x, y, z], dtype = np.int8)
+    
+    for i in range(inputVolume.sizeX()):
+        for j in range(inputVolume.sizeY()):
+            for k in range(inputVolume.sizeZ()):
+                #print(type(inputVolume.getV(i,j,k)))
+                volumeData[i,j,k] = inputVolume.getV(i,j,k)
+    
+    with mrcfile.new(mrcPath, overwrite=overwrite) as mrc:
+        mrc.set_data(volumeData)
+        print(f"mrc data dimension is converted to... {mrc.data.shape}")
+    return
+
+def volObj2Numpy(inputVolume, floatMRC=False):
+    x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
+    
+    if floatMRC:
+        volumeData = np.zeros([x, y, z], dtype = np.float32)
+    else:
+        volumeData = np.zeros([x, y, z], dtype = np.int8)
+    
+    for i in range(inputVolume.sizeX()):
+        for j in range(inputVolume.sizeY()):
+            for k in range(inputVolume.sizeZ()):
+                volumeData[i,j,k] = inputVolume.getV(i,j,k)
+    
+    return volumeData
+
+def newNumpyByXYZ(x, y, z, floatMRC=False):
+    if floatMRC:
+        volumeData = np.zeros([x, y, z], dtype = np.float32)
+    else:
+        volumeData = np.zeros([x, y, z], dtype = np.int8)
+    
+    return volumeData
+
