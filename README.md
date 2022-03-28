@@ -23,12 +23,19 @@ This scripts are under development. Not optimized code.
 9. Subtomogram generator
 
 
-### TODO.   
-1. Image formation options...
-2. Minus Noise
-3. Subtomo include?
-4. Wrong dimension adjustment?
-5. Other processing options?
+### TODO1.
+1. EMDB not PDB
+2. Direct Subtomo not from Grandmodel
+3. Subtomo percentage
+
+
+### TODO2.
+1. Standalone...
+2. Image formation options...
+3. Minus Noise
+4. Subtomo include?
+5. Wrong dimension adjustment?
+6. Other processing options?
 
 ### Timeline
 20220227 00:50 - compact volume generator completed.      
