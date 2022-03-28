@@ -32,5 +32,18 @@
                 "coord"    : [ [ "x", "y", "z" ] ]
             }
         ]
+    },
+
+    "v6": {
+        "header" : "STRING",
+        "pdbIDs" : "STRING LIST",
+        "particles" : [ 
+            {
+                "classNum" : "INT",
+                "min"      : [ "x", "y", "z" ],
+                "max"      : [ "x", "y", "z" ],
+                "coord"    : [ [ "x", "y", "z" ] ]
+            }
+        ]
     }
 }

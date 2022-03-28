@@ -162,10 +162,10 @@ def atomList2emCompact(atomList, pixelSize, densityNegative=False, verbose=False
     centroidY = 0
     centroidZ = 0
 
-    for i in range(len(atomList)):
-        centroidX += atomList[i].getX()
-        centroidY += atomList[i].getY()
-        centroidZ += atomList[i].getZ()
+    # for i in range(len(atomList)):
+    #     centroidX += atomList[i].getX()
+    #     centroidY += atomList[i].getY()
+    #     centroidZ += atomList[i].getZ()
 
     # centroidX = centroidX / len(atomList)
     # centroidY = centroidY / len(atomList)
@@ -213,9 +213,9 @@ def atomList2emCompact(atomList, pixelSize, densityNegative=False, verbose=False
         print("---------------------")
         print("maxValues : ", maxValues)
         print("minValues : ", minValues)
-        print("centroids : ", [centroidX, centroidY, centroidZ])
-        print("centers   : ", [centerX, centerY, centerZ])
-        print("shifts    : ", [shiftX, shiftY, shiftZ])
+        #print("centroids : ", [centroidX, centroidY, centroidZ])
+        #print("centers   : ", [centerX, centerY, centerZ])
+        #print("shifts    : ", [shiftX, shiftY, shiftZ])
 
     #################### COMPACT VOLUME ####################
     compactX, compactY, compactZ = maxValues[0]-minValues[0], maxValues[1]-minValues[1], maxValues[2]-minValues[2]
@@ -228,7 +228,7 @@ def atomList2emCompact(atomList, pixelSize, densityNegative=False, verbose=False
         y = int(atomList[i].getY()) - minValues[1]
         z = int(atomList[i].getZ()) - minValues[2]
 
-        currentValue = volumeCompact(x, y, z)
+        currentValue = volumeCompact.getV(x, y, z)
         if periodicTableAvailable:
             atomName = atomList[i].getAtomType()[0]
             element = elements.symbol(atomName)
@@ -335,7 +335,6 @@ def atomList2em(atomList, pixelSize, cubeSize, densityNegative=False):
             elif atomList[i].getAtomType()[0] == 'S':
                 volume.setV(currentValue + 16.0, x, y, z)
 
-
     if densityNegative:
         volume = volume * -1
 
@@ -425,7 +424,7 @@ def wgetByPDBID(pdbID, pdbDir):
     wget.download(URL, out=Path)
     return Path
 
-def wgetPDB2Volume(pdbID, pdbDir, volumeDir, toSave=True, cubeSize=0.0, toCompact=False, overwrite=False, verbose=False):
+def wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=1.0, cubeSize=0.0, toCompact=False, overwrite=False, verbose=False):
     """
     wgetPDB2Volume : Creates an PDB(CIF) file, EM file, MRC file from a PDB ID.
     @param overwrite : is for overwrite mrcfile(Volume2MRC).
@@ -439,15 +438,15 @@ def wgetPDB2Volume(pdbID, pdbDir, volumeDir, toSave=True, cubeSize=0.0, toCompac
     
     Path = wgetByPDBID(pdbID, pdbDir)
     resolution = getResolution(Path)
-    _vol = cifpdb2em(Path, pixelSize=resolution, cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=None, densityNegative=False, recenter=True)
+    _vol = cifpdb2em(Path, pixelSize=pixelSize, cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=None, densityNegative=False, recenter=True)
     
     return _vol, resolution
 
-def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, cubeSize=0.0, toCompact=False, overwrite=False, verbose=False):
+def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, pixelSize=1.0, cubeSize=0.0, toCompact=False, overwrite=False, verbose=False):
     createdVolumes = []
     resolutionList = []
     for pdbID in pdbIDList:
-        vol, resolution = wgetPDB2Volume(pdbID, pdbDir, volumeDir, toSave=False, cubeSize=cubeSize, toCompact=toCompact, overwrite=overwrite, verbose=verbose)
+        vol, resolution = wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=pixelSize, cubeSize=cubeSize, toCompact=toCompact, overwrite=overwrite, verbose=verbose)
         createdVolumes.append(vol)
         resolutionList.append(resolution)
     return createdVolumes, resolutionList
@@ -485,10 +484,9 @@ def makeCompact(inputVolume):
 ##########################################################################################################################################################################
 def getMedadataJsonTemplate():
     ''' JSON format
-    "v5": {
+    "v6": {
         "header" : "STRING",
         "pdbIDs" : "STRING LIST",
-        "resolutions" : "FLOAT LIST",
         "particles" : [ 
             {
                 "classNum" : "INT",
@@ -502,7 +500,6 @@ def getMedadataJsonTemplate():
     return {
         "header" : None,
         "pdbIDs": None,
-        "resolutions": None,
         "particles": None,
     }
 def minmaxUpdate(minList, maxList, coordList):
@@ -540,9 +537,8 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     classmaskFile = f"{scenarioDir}/{scenarioIdentifier}_class_mask.em"
 
     jsonMetadataObject = getMedadataJsonTemplate()
-    jsonMetadataObject["header"] = f"resolution : {10.0}, without Noise"
+    jsonMetadataObject["header"] = f"{10.0} A/voxel, without Noise"
     jsonMetadataObject["pdbIDs"] = pdbIDList
-    jsonMetadataObject["resolutions"] = [3.0]
     jsonMetadataObject["particles"] = []
 
     f = open(scenarioMetaDataFile, 'w')
@@ -610,7 +606,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
         minCoord = [ 4*tomoSize, 4*tomoSize, 4*tomoSize ]
         maxCoord = [ -1, -1, -1]
 
-        if verbose and failedAttempts%500 == 0 and failedAttempts != 0:
+        if verbose and failedAttempts%1000 == 0 and failedAttempts != 0:
             print(f"... Now failed Attemps are {failedAttempts}")   
         if rotationStep != 0:
             if rotFailNum == 20:
@@ -663,7 +659,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
             particleNum+=1
             rotatedVol = None
             f.write(f"{pdbIDList[classNum]},{centerX},{centerY},{centerZ},{phi},{theta},{psi}\n")
-            if verbose and particleNum % 50 == 0:
+            if verbose and particleNum % 200 == 0:
                 print(f"... Particle Num : {particleNum}")  
     f.close()
 
@@ -685,25 +681,18 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     else:
         return volume, class_mask
 
-def makeGrandModelByPDBIDs(pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="noname", withClassMask=True, toResolution=10.0, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, rotationStep=0, JSONCOMPACT=True, verbose=False):
+def makeGrandModelByPDBIDs(pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="noname", withClassMask=True, pixelSize=10.0, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, rotationStep=0, JSONCOMPACT=True, verbose=False):
     targetPath = f"{scenarioDir}/{scenarioIdentifier}.em"
     targetVoxelOccupyPath = f"{scenarioDir}/{scenarioIdentifier}_voxelOccupy.txt"
     maskPath = f"{scenarioDir}/{scenarioIdentifier}_class_mask.em"
-    # First, PDB IDs -> PDB files -> Volume(.em) List
+    # PDB IDs -> PDB files -> Volume(.em) List
     print("makeGrandModelByPDBIDs : 1. prepare volume object from the Internet. -----------")
-    volumes, resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, volumeDir=volumeDir, toCompact=True, overwrite=True, verbose=True)
-    print("-- resolution list : ", resolutions)
+    volumes, resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, toCompact=True, overwrite=True, verbose=True)
+    for pdbID, volume in zip(pdbIDList, volumes):
+        volume.write(f"{volumeDir}/{pdbID}.em")
 
-    # Second, Resolution adjustment.
-    print("makeGrandModelByPDBIDs : 2. resize volume object with respect to resolution. ---")
-    f = open(targetVoxelOccupyPath, 'w')
-    f.write("pdbID,occupyVoxelNum,resolution,toResolution\n")
-    for pdbID, volume, resolution in zip(pdbIDList, volumes, resolutions):
-        occupyVoxelNum = resolutionResizeUnity(volume, pdbID, 5.0, volumeDir, toResolution, verbose=verbose)
-        f.write(f"{pdbID},{occupyVoxelNum},{resolution},{toResolution}\n")
-    f.close()
     # Now, volume file is ready.
-    print("makeGrandModelByPDBIDs : 3. make grandmodel. -----------------------------------")
+    print("makeGrandModelByPDBIDs : 2. make grandmodel. -----------------------------------")
     volume, class_mask = makeScenarioByPDBIDs(pdbIDList, volumeDir, toSave=False, withClassMask=withClassMask, scenarioDir=scenarioDir, scenarioIdentifier=scenarioIdentifier, tomoSize=tomoSize, pfailedAttempts=pfailedAttempts, pparticleNum=pparticleNum, rotationStep=rotationStep, JSONCOMPACT=JSONCOMPACT, verbose=verbose)
 
     volume.write(targetPath)
@@ -719,75 +708,6 @@ def compactRandomRotation(inputVolume, rotationStep = 1, toSave = False):
     rotate(inputVolume, rotatedVolume, int(phi), int(theta), int(psi))
     comp = makeCompact(rotatedVolume)
     return comp, phi, theta, psi
-
-# FROM PDB ID -> Resolution corrected Compact Cuboid!
-def resolutionResizeUnity(volume, identifier, resolution, outputDir, toResolution, verbose=False):
-    if resolution > toResolution:
-        raise RuntimeError(f"Target resolution {toResolution} is smaller than Resolution {resolution}. PDBID is {identifier}")
-    
-    outputVolumePath = f"{outputDir}/{identifier}.em"
-    occupyVoxelNum = 0
-    if resolution == toResolution:
-        volume.write(outputVolumePath)
-        return
-    
-    X, Y, Z = volume.sizeX(), volume.sizeY(), volume.sizeZ()
-    resizedSizeX = math.ceil( (volume.sizeX() - 1) * resolution / toResolution ) 
-    resizedSizeY = math.ceil( (volume.sizeY() - 1) * resolution / toResolution ) 
-    resizedSizeZ = math.ceil( (volume.sizeZ() - 1) * resolution / toResolution ) 
-    outputVolume = vol(resizedSizeX, resizedSizeY, resizedSizeZ)
-    outputVolume.setAll(0.0)
-
-    if verbose:
-        print(f" BEFORE SIZE : {volume.sizeX()} x {volume.sizeY()} x {volume.sizeZ()}")
-        print(f" AFTER SIZE : {outputVolume.sizeX()} x {outputVolume.sizeY()} x {outputVolume.sizeZ()}")
-    
-    for i in range(resizedSizeX):
-        for j in range(resizedSizeY):
-            for k in range(resizedSizeZ):
-                curVal = 0.0
-
-                realcoord_i   =   i   * toResolution
-                realcoord_j   =   j   * toResolution
-                realcoord_k   =   k   * toResolution
-                
-                lowerIdxX = math.ceil((i-1) * toResolution / resolution) if i-1 > 0 else 0
-                upperIdxX = math.floor((i+1) * toResolution / resolution)
-                lowerIdxY = math.ceil((j-1) * toResolution / resolution) if j-1 > 0 else 0
-                upperIdxY = math.floor((j+1) * toResolution / resolution)
-                lowerIdxZ = math.ceil((k-1) * toResolution / resolution) if k-1 > 0 else 0
-                upperIdxZ = math.floor((k+1) * toResolution / resolution)
-
-                idxX = lowerIdxX
-                while idxX <= upperIdxX:
-                    realcordX = round( idxX * resolution, 4)
-                    idxY = lowerIdxY
-                    while idxY <= upperIdxY:
-                        realcordY = round( idxY * resolution, 4)
-                        idxZ = lowerIdxZ
-                        while idxZ <= upperIdxZ:
-                            realcordZ = round( idxZ * resolution, 4 )
-                            modfactorX = round( ( toResolution - abs( realcoord_i - realcordX ) ) / toResolution, 4 )
-                            modfactorY = round( ( toResolution - abs( realcoord_j - realcordY ) ) / toResolution, 4 )
-                            modfactorZ = round( ( toResolution - abs( realcoord_k - realcordZ ) ) / toResolution, 4 )
-
-                            modfactor = modfactorX * modfactorY * modfactorZ
-                            try:
-                                val = volume.getV(idxX, idxY, idxZ) * modfactor
-                                curVal += val
-                            except:
-                                pass
-                            idxZ += 1
-                        idxY += 1
-                    idxX += 1
-                
-                modfactor = resolution / toResolution
-                voxelVal = curVal * modfactor
-                if voxelVal != 0.0:
-                    occupyVoxelNum += 1
-                    outputVolume.setV(voxelVal , i, j, k)
-    outputVolume.write(outputVolumePath)
-    return occupyVoxelNum
 
 def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDir, crowdLevel, SNR=1.0, generateNum=1, subtomoSizeX=50, subtomoSizeY=0, subtomoSizeZ=0):
     # Missing size is filled with X axis.
@@ -826,7 +746,6 @@ def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDi
         jsonMetadataObject = getMedadataJsonTemplate()
         jsonMetadataObject["header"] = f"{10.0}A/vx with white noise"
         jsonMetadataObject["pdbIDs"] = pdbIDList
-        jsonMetadataObject["resolutions"] = [5.0]
         jsonMetadataObject["particles"] = []
 
         subtomo = vol(subtomoSizeX, subtomoSizeY, subtomoSizeZ)
@@ -897,21 +816,23 @@ def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDi
         mrcSubtomo = volObj2Numpy(subtomo, floatMRC = True)
         f = open(metadataParticleListTXT, 'w')
         f.write("index,classNum,particleID\n")
+        mrcFileName = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}_particleMask.mrc"
+        subtomoP = newNumpyByXYZ(subtomoSizeX, subtomoSizeY, subtomoSizeZ, floatMRC = False) # Minimizing space -> integer.
         for p in particleDicts:
             p['min'], p['max'] = findMinMaxByList(p['coord'])
             p['classNum'] = particleJsonList[  p['particleID'] ]['classNum']
             f.write( f"{index},{p['classNum']},{p['particleID']}\n")
             # del p['particleID']
-            mrcFileName = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}_subtomoParticle_{index}.mrc"
-            subtomoP = newNumpyByXYZ(subtomoSizeX, subtomoSizeY, subtomoSizeZ, floatMRC = False) # Minimizing space -> integer.
             for particleCoord in p['coord']:
-                subtomoP[particleCoord[0], particleCoord[1], particleCoord[2]] = 10 
-            # Write each particle MRC metadata.
-            with mrcfile.new(mrcFileName, overwrite=True) as mrc:
-                mrc.set_data(subtomoP)
+                subtomoP[particleCoord[0], particleCoord[1], particleCoord[2]] = index 
+            
+            # for efficient data saving.
+            del p['coord']
             index+=1
-        f.close()
 
+        f.close()
+        with mrcfile.new(mrcFileName, overwrite=True) as mrc:
+            mrc.set_data(subtomoP)
         jsonMetadataObject["particles"] = particleDicts
 
         print(f"--------- subtomogram generated : {i + 1}")
@@ -924,142 +845,7 @@ def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDi
             json.dump(jsonMetadataObject, json_file)
 
 def subtomoDirectSaver(pdbIDList, volumesDir, subtomoIdentifier, subtomoDir, crowdLevel, SNR=1.0, generateNum=1, subtomoSizeX=50, subtomoSizeY=0, subtomoSizeZ=0):
-    # Missing size is filled with X axis.
-    if subtomoSizeY == 0:
-        subtomoSizeY = subtomoSizeX
-    if subtomoSizeZ == 0:
-        subtomoSizeZ = subtomoSizeX
-    
-    volumeList = []
-    for pdbID in pdbIDList:
-        # TODO : also update the make grand!
-    
-    scenarioVolume = read(f'{scenarioDir}/{identifier}.em')
-    
-    particleCenters = []
-    # Load txt file
-    with open(f'{scenarioDir}/{identifier}.txt') as scenarioParticleTxt:
-        txt_contents = scenarioParticleTxt.readlines()
-        particleTxtPattern = re.compile("(.*),(.*),(.*),(.*),(.*),(.*),(.*)")
-        particleID = 0
-        for line in txt_contents:
-            parsedInfo = re.findall(particleTxtPattern, line)[0]
-            particleCenter = [ parsedInfo[0], parsedInfo[1], parsedInfo[2], parsedInfo[3], particleID ]
-            particleID += 1
-            particleCenters.append(particleCenter)
-    
-    particleJsonList = []
-    # Load json file
-    with open(f'{scenarioDir}/{identifier}.json') as scenarioJsonFile:
-        json_object = json.load(scenarioJsonFile)
-        particleJsonList = json_object['particles']
-        pdbIDList = json_object['pdbIDs']
-
-    for i in range(generateNum):
-        particleList = []
-        metadataParticleListTXT = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}_particles.txt"
-        subtomoMRCFile = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}.mrc"
-        subtomoJSONFile = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}.json"
-
-        jsonMetadataObject = getMedadataJsonTemplate()
-        jsonMetadataObject["header"] = f"{10.0}A/vx with white noise"
-        jsonMetadataObject["pdbIDs"] = pdbIDList
-        jsonMetadataObject["resolutions"] = [5.0]
-        jsonMetadataObject["particles"] = []
-
-        subtomo = vol(subtomoSizeX, subtomoSizeY, subtomoSizeZ)
-        subtomo.setAll(0.0)
-
-        if True: # type1 : just pick the center of the particle.
-            # np.random.randint :: low exclusive high inclusive
-            particleInfo = particleCenters[ np.random.randint(low = 0, high = len(particleCenters)) ]
-            cX, cY, cZ = int(float(particleInfo[1])), int(float(particleInfo[2])), int(float(particleInfo[3]))
-        
-        if cX <= subtomoSizeX/2:
-            lrX = 0
-        elif cX >= scenarioVolume.sizeX() - subtomoSizeX/2:
-            lrX = scenarioVolume.sizeX() - subtomoSizeX
-        else:
-            lrX = cX - subtomoSizeX//2
-        if cY <= subtomoSizeY/2:
-            lrY = 0
-        elif cY >= scenarioVolume.sizeY() - subtomoSizeY/2:
-            lrY = scenarioVolume.sizeY() - subtomoSizeY
-        else:
-            lrY = cY - subtomoSizeY//2
-        if cZ <= subtomoSizeZ/2:
-            lrZ = 0
-        elif cZ >= scenarioVolume.sizeZ() - subtomoSizeZ/2:
-            lrZ = scenarioVolume.sizeZ() - subtomoSizeZ
-        else:
-            lrZ = cZ - subtomoSizeZ//2
-        
-        for x in range(subtomoSizeX):
-            for y in range(subtomoSizeY):
-                for z in range(subtomoSizeZ):
-                    getValue = scenarioVolume.getV( lrX + x , lrY + y, lrZ + z )
-                    
-                    if getValue != 0.0 :
-                        subtomo.setV( getValue , x, y, z)
-                        debug1 = []
-                        for particle in particleJsonList:
-                            
-                            minList = particle['min']
-                            maxList = particle['max']
-                            curCord = [ lrX + x, lrY + y, lrZ + z]
-                
-                            debug1.append( [ minList, maxList, curCord ])
-                            if checkOverlap(minList, maxList, curCord):
-                                particleList.append( [  particleJsonList.index(particle), [x,y,z] ] )
-                                break
-                        else:
-                            raise RuntimeError("SHOULD not happen.")
-        
-        subtomo = noiseApplier(subtomo, SNR=SNR)
-        
-        particleKeys = []
-        particleDicts = []
-        particleIDList = []
-
-        for p in particleList:
-            if p[0] in particleKeys:
-                for pp in particleDicts:
-                    if pp['particleID'] == p[0]:
-                        pp['coord'].append(p[1])
-                        break
-            else:
-                particleKeys.append( p[0] )
-                particleDicts.append( { "particleID" : p[0], "min" : [] , "max" : [] ,  "coord": [ p[1] ] } )
-        
-        index = 1
-        mrcSubtomo = volObj2Numpy(subtomo, floatMRC = True)
-        f = open(metadataParticleListTXT, 'w')
-        f.write("index,classNum,particleID\n")
-        for p in particleDicts:
-            p['min'], p['max'] = findMinMaxByList(p['coord'])
-            p['classNum'] = particleJsonList[  p['particleID'] ]['classNum']
-            f.write( f"{index},{p['classNum']},{p['particleID']}\n")
-            # del p['particleID']
-            mrcFileName = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}_subtomoParticle_{index}.mrc"
-            subtomoP = newNumpyByXYZ(subtomoSizeX, subtomoSizeY, subtomoSizeZ, floatMRC = False) # Minimizing space -> integer.
-            for particleCoord in p['coord']:
-                subtomoP[particleCoord[0], particleCoord[1], particleCoord[2]] = 10 
-            # Write each particle MRC metadata.
-            with mrcfile.new(mrcFileName, overwrite=True) as mrc:
-                mrc.set_data(subtomoP)
-            index+=1
-        f.close()
-
-        jsonMetadataObject["particles"] = particleDicts
-
-        print(f"--------- subtomogram generated : {i + 1}")
-        
-        # Write Subtomo MRC.
-        with mrcfile.new(subtomoMRCFile, overwrite=True) as mrc:
-            mrc.set_data(mrcSubtomo)
-        # Write Subtomo Json metadata.
-        with open(subtomoJSONFile, "w") as json_file:
-            json.dump(jsonMetadataObject, json_file)
+    pass
 
 ##########################################################################################################################################################################
 #  Main Code Workspace
@@ -1078,7 +864,7 @@ if __name__ == "__main__":
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
     appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "6__subtomo test data"
+    DESCRIPTION = "6_2_subtomo test data"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
     #######################################################################################################################
@@ -1099,9 +885,18 @@ if __name__ == "__main__":
     # for test dataset 3. : mrc output / mrc metadata
     #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0328_gmwoN_5.0wonoise_4", "/cdata/subtomo", 0, SNR=-1, generateNum=15, subtomoSizeX=50)
     #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0328_gmwoN_5.0noise2.0_4", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
+    # for test dataset 3.1 : merged mrc metadata.
+    #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0328_5.0wonoise_5", "/cdata/subtomo", 0, SNR=-1, generateNum=15, subtomoSizeX=50)
+    #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0328_5.0noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
     
     # for test dataset 4. : subtomo occupy percentage threshold.
-    makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0328_5.0compact", 10.0, tomoSize=256, pfailedAttempts=11000, pparticleNum=2300, rotationStep=3, JSONCOMPACT=True, verbose=True)
+    makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0328_compact10pV", pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_wonoise_5", "/cdata/subtomo", 0, SNR=-1, generateNum=15, subtomoSizeX=50)
+    subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
+    #aL = naivePDBParser("/cdata/pdbData/1bxn.pdb")
+    #v, c1, c2, c3 = atomList2emCompact(aL, 1, densityNegative=False, verbose=True)
+    #print(c1, c2, c3)
+    #print(v.sizeX(), v.sizeY(), v.sizeZ())
     ################### Workspace Ended #############
     print(f" All of the Jobs completed with elapsed time : {time.time()-executionStart}")
     #################### Program Ended ##############

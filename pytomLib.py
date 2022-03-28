@@ -104,7 +104,10 @@ def naivePDBParser(pdbPath, chainName=None):
     atomList = []
 
     pdbFile = open(pdbPath, 'r')
+    min = [ 999999999, 999999999, 999999999]
+    max = [ -1, -1, -1]
     try:
+
         for line in pdbFile:
 
             name = line[:6]
@@ -133,9 +136,23 @@ def naivePDBParser(pdbPath, chainName=None):
                     x        = float(line[29:38])
                     y        = float(line[38:46])
                     z        = float(line[46:54])
-
+                if x > max[0]:
+                    max[0] = x
+                if x < min[0]:
+                    min[0] = x
+                if y > max[1]:
+                    max[1] = y
+                if y < min[1]:
+                    min[1] = y
+                if z > max[2]:
+                    max[2] = z
+                if z < min[2]:
+                    min[2] = z
                 atomList.append(NaiveAtom(atomSeq, atomType, x, y, z, resSeq, resType))
     finally:
+        print("pdb file : ", pdbPath)
+        print("min : ", min)
+        print("max : ", max)
         pdbFile.close()
 
     return atomList
