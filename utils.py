@@ -1,6 +1,7 @@
 from pytom.basic.files import read
 from pytom_volume import vol
 import json
+import mrcfile
 import numpy as np
 ################################
 # matrixToVolLayerX, Y, Z

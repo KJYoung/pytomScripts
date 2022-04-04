@@ -25,6 +25,7 @@ This scripts are under development. Not optimized code.
 
 ### TODO1.
 1. EMDB not PDB
+   1. Start with wgetPDB2ExactCompactMRC
 2. Direct Subtomo not from Grandmodel
 3. Subtomo percentage
 
@@ -40,5 +41,6 @@ This scripts are under development. Not optimized code.
 ### Timeline
 20220227 00:50 - compact volume generator completed.      
 20220306 23:47 - Update Readme for rotation TODO.   
-20220313 24:00 - (Until today) Rotation, Dimension adjustment done.   
-20220321 16:00 - (Until today) Subtomogram generator, Metadata writer done.
+20220313 24:00 - (Until today) Rotation.   
+20220321 16:00 - (Until today) Subtomogram generator, Metadata writer.
+20220402 04:00 - (Until today) mrc output. dimension adjustment.

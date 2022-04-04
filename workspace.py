@@ -100,8 +100,11 @@ def atomList2emCube(atomList, pixelSize, densityNegative=False, resolutionFactor
     #################### COMPACT CUBE VOLUME ####################
     compactX, compactY, compactZ = maxValues[0]-minValues[0], maxValues[1]-minValues[1], maxValues[2]-minValues[2]
     cubeSize = int(sqrt( compactX**2 + compactY**2 + compactZ**2 ))
-    if cubeSize % 2 == 0:
-        cubeSize += 1 # Let cubeSize to be odd.
+    # if cubeSize % 2 == 0:
+    #     cubeSize += 1 # Let cubeSize to be odd.
+    # Let cubeSize to be even!
+    if cubeSize % 2 != 0:
+        cubeSize += 1 # Let cubeSize to be even.
     
     volumeCompact = vol(cubeSize, cubeSize, cubeSize)
 
@@ -142,117 +145,6 @@ def atomList2emCube(atomList, pixelSize, densityNegative=False, resolutionFactor
     # print(overlap, " : is the overlap counted")
     # return volumeCompact, cubeSize/2, cubeSize/2, cubeSize/2
     return volumeCompact
-
-def atomList2emCompact(atomList, pixelSize, densityNegative=False, verbose=False):
-    """
-    atomList2em:
-    @param atomList:
-    @param pixelSize:
-    @param cubeSize:
-    @param densityNegative:
-    @return:    
-    """
-    from math import floor
-    from pytom_volume import vol
-
-    if len(atomList) == 0:
-        raise RuntimeError('atomList2em : Your atom list is empty!')
-
-    centroidX = 0
-    centroidY = 0
-    centroidZ = 0
-
-    # for i in range(len(atomList)):
-    #     centroidX += atomList[i].getX()
-    #     centroidY += atomList[i].getY()
-    #     centroidZ += atomList[i].getZ()
-
-    # centroidX = centroidX / len(atomList)
-    # centroidY = centroidY / len(atomList)
-    # centroidZ = centroidZ / len(atomList)
-
-    # centerX = floor(float(cubeSize) / 2.0)
-    # centerY = floor(float(cubeSize) / 2.0)
-    # centerZ = floor(float(cubeSize) / 2.0)
-
-    # shiftX = centroidX - centerX
-    # shiftY = centroidY - centerY
-    # shiftZ = centroidZ - centerZ
-
-    for i in range(len(atomList)):
-        # atomList[i].setX(round(atomList[i].getX() / pixelSize) + centerX)
-        # atomList[i].setY(round(atomList[i].getY() / pixelSize) + centerY)
-        # atomList[i].setZ(round(atomList[i].getZ() / pixelSize) + centerZ)
-        atomList[i].setX(round(atomList[i].getX() / pixelSize))
-        atomList[i].setY(round(atomList[i].getY() / pixelSize))
-        atomList[i].setZ(round(atomList[i].getZ() / pixelSize))
-
-    periodicTableAvailable = True
-    try:
-        # searching for periodic table library http://pypi.python.org/pypi/periodictable
-        from periodictable import elements
-    except ImportError:
-        periodicTableAvailable = False
-
-    maxValues = [ -1000.0, -1000.0, -1000.0 ]
-    minValues = [ 1000.0, 1000.0, 1000.0 ]
-    
-    for i in range(len(atomList)):
-        x = int(atomList[i].getX())
-        y = int(atomList[i].getY())
-        z = int(atomList[i].getZ())
-        currentValues = [x, y, z]
-
-        for i in [0,1,2]:
-            if currentValues[i] > maxValues[i]:
-                maxValues[i] = currentValues[i]
-            if currentValues[i] < minValues[i]:
-                minValues[i] = currentValues[i]
-    
-    if verbose:
-        print("---------------------")
-        print("maxValues : ", maxValues)
-        print("minValues : ", minValues)
-        #print("centroids : ", [centroidX, centroidY, centroidZ])
-        #print("centers   : ", [centerX, centerY, centerZ])
-        #print("shifts    : ", [shiftX, shiftY, shiftZ])
-
-    #################### COMPACT VOLUME ####################
-    compactX, compactY, compactZ = maxValues[0]-minValues[0], maxValues[1]-minValues[1], maxValues[2]-minValues[2]
-    volumeCompact = vol(compactX+1, compactY+1, compactZ+1)
-    # add 1 is crucial, basically
-    volumeCompact.setAll(0.0)
-
-    for i in range(len(atomList)):
-        x = int(atomList[i].getX()) - minValues[0]
-        y = int(atomList[i].getY()) - minValues[1]
-        z = int(atomList[i].getZ()) - minValues[2]
-
-        currentValue = volumeCompact.getV(x, y, z)
-        if periodicTableAvailable:
-            atomName = atomList[i].getAtomType()[0]
-            element = elements.symbol(atomName)
-            mass = element.mass
-            volumeCompact.setV(currentValue + mass, x, y, z)
-            
-        else:
-            if atomList[i].getAtomType()[0] == 'H':  ##maybe take this out
-                volumeCompact.setV(currentValue + 1.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'C':
-                volumeCompact.setV(currentValue + 6.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'N':
-                volumeCompact.setV(currentValue + 7.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'O':
-                volumeCompact.setV(currentValue + 8.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'P':
-                volumeCompact.setV(currentValue + 15.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'S':
-                volumeCompact.setV(currentValue + 16.0, x, y, z)
-
-    if densityNegative:
-        volumeCompact = volumeCompact * -1
-
-    return volumeCompact, compactX, compactY, compactZ
 
 def atomList2em(atomList, pixelSize, cubeSize, densityNegative=False):
     """
@@ -392,9 +284,28 @@ def getResolution(filePath):
         print("Unsupported File Extension")
         raise RuntimeError('Unsupported file extenstion : ', filePath)
 
-# TODO
-def getResolutionsByID(pdbIDList):
-    pass
+def wgetPDB2ExactCompactMRC(pdbID, pdbDir, outputDir, overwrite=False, verbose=False):
+    """
+    wgetPDB2ExactCompactVolume : Creates an PDB(CIF) file, EM file, MRC file from a PDB ID.
+    @param overwrite : is for overwrite mrcfile(Volume2MRC).
+    """
+    # pdbDir should not include dangling /
+    volumePath = f"{outputDir}/{pdbID}.em"
+    mrcPath = f"{outputDir}/{pdbID}.mrc"
+    if verbose:
+        print(f"wgetPDB2ExactCompactMRC is working with PDBID : {pdbID}")
+    
+    Path = wgetByPDBID(pdbID, pdbDir)
+    resolution = getResolution(Path)
+    _vol = cifpdb2em(Path, pixelSize=1.0, cubeSize=0.0, toCompact=True, chain=None, fname=None, densityNegative=False, recenter=True)
+    
+    _vol.write(volumePath)
+    volume2MRC(volumePath, mrcPath, floatMRC=True, overwrite=overwrite, verbose=verbose)
+    #return _vol, resolution
+
+def wgetPDB2ExactCompactMRCs(pdbIDs, pdbDir, outputDir, overwrite=False, verbose=False):
+    for pdbID in pdbIDs:
+        wgetPDB2ExactCompactMRC(pdbID, pdbDir, outputDir, overwrite=overwrite, verbose=verbose)
 
 def wgetByPDBID(pdbID, pdbDir):
     pdbPath = f"{pdbDir}/{pdbID}.pdb"
@@ -867,32 +778,13 @@ if __name__ == "__main__":
     DESCRIPTION = "6_2_subtomo test data"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
-    #######################################################################################################################
-    #ov = volumeOutliner("/cdata/scenario/0315_merge2.em", isFile=True, outlineValue = 500)
-    #ov.write("/cdata/outlined/0315_merge2_utilstest.em")
-    # for test dataset 2.
-    # for - grandmodel.
-    # makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0321_gmwoN_5.0compact", 10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=2200, rotationStep=2, JSONCOMPACT=True, verbose=True)
-    # makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0321_gmwoN_5.0verbose", 10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=2200, rotationStep=2, JSONCOMPACT=False, verbose=True)
-    # for - subtomogram.
-    # previous approach.
-    # sl, js = subtomoSampler("0321_gmwoN_5.0compact", "/cdata/scenario", 2, generateNum=3, subtomoSizeX=50)
-    # volumeListWriter(sl, "/cdata/scenario", "0318_2_6gmwoN_5.0compact_subtomo", JSON=js)
-    # unified approach.
-    #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0321_gmwoN_5.0compact_1", "/cdata/subtomo", 0, SNR=1.0, generateNum=10, subtomoSizeX=50)
-    #subtomoSampleSaver("0321_gmwoN_5.0verbose", "/cdata/scenario", "0321_gmwoN_5.0verbose_1", "/cdata/subtomo", 0, SNR=1.0, generateNum=10, subtomoSizeX=50)
-    
-    # for test dataset 3. : mrc output / mrc metadata
-    #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0328_gmwoN_5.0wonoise_4", "/cdata/subtomo", 0, SNR=-1, generateNum=15, subtomoSizeX=50)
-    #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0328_gmwoN_5.0noise2.0_4", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
-    # for test dataset 3.1 : merged mrc metadata.
-    #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0328_5.0wonoise_5", "/cdata/subtomo", 0, SNR=-1, generateNum=15, subtomoSizeX=50)
-    #subtomoSampleSaver("0321_gmwoN_5.0compact", "/cdata/scenario", "0328_5.0noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
-    
+    ####################################################################################################################### 
     # for test dataset 4. : subtomo occupy percentage threshold.
-    makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0328_compact10pV", pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_wonoise_5", "/cdata/subtomo", 0, SNR=-1, generateNum=15, subtomoSizeX=50)
-    subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
+    # makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0328_compact10pV", pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    # subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_wonoise_5", "/cdata/subtomo", 0, SNR=-1, generateNum=15, subtomoSizeX=50)
+    # subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
+    
+    wgetPDB2ExactCompactMRCs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/pix1pdb2mrc_even")
     #aL = naivePDBParser("/cdata/pdbData/1bxn.pdb")
     #v, c1, c2, c3 = atomList2emCompact(aL, 1, densityNegative=False, verbose=True)
     #print(c1, c2, c3)
