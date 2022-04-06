@@ -18,8 +18,6 @@ This scripts are under development. Not optimized code.
    1. But, mrcfile.validate -> false.
    2. int mode mrc generated. -> File size is efficient : 134.2M vs 536.9M
 8. Dimension adjustment
-   1. maybe just 1 A -> 10 A(1 nm)?
-   2. TODO : re-verify.
 9. Subtomogram generator
 
 
@@ -28,6 +26,7 @@ This scripts are under development. Not optimized code.
    1. Start with wgetPDB2ExactCompactMRC
 2. Direct Subtomo not from Grandmodel
 3. Subtomo percentage
+4. Grandmodel particle distribution(ratio)
 
 
 ### TODO2.
@@ -35,12 +34,12 @@ This scripts are under development. Not optimized code.
 2. Image formation options...
 3. Minus Noise
 4. Subtomo include?
-5. Wrong dimension adjustment?
-6. Other processing options?
+5. Other processing options?
+6. Multithreading?
 
 ### Timeline
 20220227 00:50 - compact volume generator completed.      
 20220306 23:47 - Update Readme for rotation TODO.   
 20220313 24:00 - (Until today) Rotation.   
-20220321 16:00 - (Until today) Subtomogram generator, Metadata writer.
-20220402 04:00 - (Until today) mrc output. dimension adjustment.
+20220321 16:00 - (Until today) Subtomogram generator, Metadata writer.   
+20220402 04:00 - (Until today) mrc output. dimension adjustment.   

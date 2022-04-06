@@ -517,7 +517,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
         minCoord = [ 4*tomoSize, 4*tomoSize, 4*tomoSize ]
         maxCoord = [ -1, -1, -1]
 
-        if verbose and failedAttempts%1000 == 0 and failedAttempts != 0:
+        if verbose and failedAttempts%2000 == 0 and failedAttempts != 0:
             print(f"... Now failed Attemps are {failedAttempts}")   
         if rotationStep != 0:
             if rotFailNum == 20:
@@ -570,7 +570,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
             particleNum+=1
             rotatedVol = None
             f.write(f"{pdbIDList[classNum]},{centerX},{centerY},{centerZ},{phi},{theta},{psi}\n")
-            if verbose and particleNum % 200 == 0:
+            if verbose and particleNum % 500 == 0:
                 print(f"... Particle Num : {particleNum}")  
     f.close()
 
@@ -581,7 +581,8 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     appendMetaDataln(f"makeScenarioByPDBIDs {scenarioIdentifier} done - time elapsed : {time.time() - startTime}s")
     appendMetaDataln(f"-output file : {scenarioVolumeFile}, cubeSize : {fulltomX}x{fulltomY}x{fulltomZ}")
     appendMetaDataln(f"-with pdbIDList : {pdbIDList}")
-    appendMetaDataln(f"-failedAttempts : {pfailedAttempts}, resultParticleNum : {particleNum}")
+    appendMetaDataln(f"-Parameter - failedAttempts : {pfailedAttempts}, resultParticleNum : {pparticleNum}")
+    appendMetaDataln(f"-Result - failedAttempts : {failedAttempts}, resultParticleNum : {particleNum}")
 
     print(f"----------- Scenario generation is done... with Particle Number {particleNum}----------")
     # -----------------
@@ -592,15 +593,16 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     else:
         return volume, class_mask
 
-def makeGrandModelByPDBIDs(pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="noname", withClassMask=True, pixelSize=10.0, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, rotationStep=0, JSONCOMPACT=True, verbose=False):
+def makeGrandModelByPDBIDs(pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="noname", withClassMask=True, newVolume=True, pixelSize=10.0, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, rotationStep=0, JSONCOMPACT=True, verbose=False):
     targetPath = f"{scenarioDir}/{scenarioIdentifier}.em"
     targetVoxelOccupyPath = f"{scenarioDir}/{scenarioIdentifier}_voxelOccupy.txt"
     maskPath = f"{scenarioDir}/{scenarioIdentifier}_class_mask.em"
     # PDB IDs -> PDB files -> Volume(.em) List
     print("makeGrandModelByPDBIDs : 1. prepare volume object from the Internet. -----------")
-    volumes, resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, toCompact=True, overwrite=True, verbose=True)
-    for pdbID, volume in zip(pdbIDList, volumes):
-        volume.write(f"{volumeDir}/{pdbID}.em")
+    if newVolume:
+        volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, toCompact=True, overwrite=True, verbose=True)
+        for pdbID, volume in zip(pdbIDList, volumes):
+            volume.write(f"{volumeDir}/{pdbID}.em")
 
     # Now, volume file is ready.
     print("makeGrandModelByPDBIDs : 2. make grandmodel. -----------------------------------")
@@ -621,6 +623,7 @@ def compactRandomRotation(inputVolume, rotationStep = 1, toSave = False):
     return comp, phi, theta, psi
 
 def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDir, crowdLevel, SNR=1.0, generateNum=1, subtomoSizeX=50, subtomoSizeY=0, subtomoSizeZ=0):
+    startTime = time.time()
     # Missing size is filled with X axis.
     if subtomoSizeY == 0:
         subtomoSizeY = subtomoSizeX
@@ -633,10 +636,14 @@ def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDi
     # Load txt file
     with open(f'{scenarioDir}/{tomoIdentifier}.txt') as scenarioParticleTxt:
         txt_contents = scenarioParticleTxt.readlines()
-        particleTxtPattern = re.compile("(.*),(.*),(.*),(.*),(.*),(.*),(.*)")
+        particleTxtPattern = re.compile("(.*),([0-9.]*),([0-9.]*),([0-9.]*),([0-9]*),([0-9]*),([0-9]*)")
         particleID = 0
         for line in txt_contents:
-            parsedInfo = re.findall(particleTxtPattern, line)[0]
+            parsedInfo = re.findall(particleTxtPattern, line)
+            if parsedInfo != []:
+                parsedInfo = parsedInfo[0]
+            else:
+                continue
             particleCenter = [ parsedInfo[0], parsedInfo[1], parsedInfo[2], parsedInfo[3], particleID ]
             particleID += 1
             particleCenters.append(particleCenter)
@@ -648,9 +655,14 @@ def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDi
         particleJsonList = json_object['particles']
         pdbIDList = json_object['pdbIDs']
 
+    metadataCSV = f"{subtomoDir}/{subtomoIdentifier}_files.csv"
+    csvFile = open(metadataCSV, "w")
+    # Format : [subtomogram mrc file name],[subtomogram particle mask file name]
     for i in range(generateNum):
         particleList = []
         metadataParticleListTXT = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}_particles.txt"
+        mrcFileName = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}_particleMask.mrc"
+        
         subtomoMRCFile = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}.mrc"
         subtomoJSONFile = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}.json"
 
@@ -727,7 +739,7 @@ def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDi
         mrcSubtomo = volObj2Numpy(subtomo, floatMRC = True)
         f = open(metadataParticleListTXT, 'w')
         f.write("index,classNum,particleID\n")
-        mrcFileName = f"{subtomoDir}/{subtomoIdentifier}_{i + 1}_particleMask.mrc"
+        
         subtomoP = newNumpyByXYZ(subtomoSizeX, subtomoSizeY, subtomoSizeZ, floatMRC = False) # Minimizing space -> integer.
         for p in particleDicts:
             p['min'], p['max'] = findMinMaxByList(p['coord'])
@@ -742,11 +754,13 @@ def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDi
             index+=1
 
         f.close()
+
+        # Particle metadata
         with mrcfile.new(mrcFileName, overwrite=True) as mrc:
             mrc.set_data(subtomoP)
         jsonMetadataObject["particles"] = particleDicts
 
-        print(f"--------- subtomogram generated : {i + 1}")
+        print(f"----- subtomogram generated : {i + 1}")
         
         # Write Subtomo MRC.
         with mrcfile.new(subtomoMRCFile, overwrite=True) as mrc:
@@ -754,6 +768,24 @@ def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDi
         # Write Subtomo Json metadata.
         with open(subtomoJSONFile, "w") as json_file:
             json.dump(jsonMetadataObject, json_file)
+        
+        csvFile.write(f"{subtomoMRCFile},{mrcFileName}\n")
+    csvFile.close()
+    print(f"------------subtomogram generation completed : {subtomoIdentifier}")
+    # --- META DATA ---
+    appendMetaDataln(f"subtomoSampleSaver from {tomoIdentifier} to {subtomoIdentifier} done - time elapsed : {time.time() - startTime}s")
+    appendMetaDataln(f"-output subtomoSize : {subtomoSizeX}x{subtomoSizeX}x{subtomoSizeX}")
+    appendMetaDataln(f"-Parameter - SNR : {SNR}, generateNum : {generateNum}")
+
+def subtomoSampleSaverCSV(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDir, crowdLevel, SNR=1.0, generateNum=1, subtomoSizeX=50, subtomoSizeY=0, subtomoSizeZ=0):
+    metadataCSV = f"{subtomoDir}/{subtomoIdentifier}_files.csv"
+    csvFile = open(metadataCSV, "w")
+    # Format : [subtomogram mrc file name],[subtomogram particle mask file name]
+    for i in range(generateNum):
+        mrcFileName = f"{subtomoIdentifier}_{i + 1}_particleMask.mrc"
+        subtomoMRCFile = f"{subtomoIdentifier}_{i + 1}.mrc"
+        csvFile.write(f"{subtomoMRCFile},{mrcFileName}\n")
+    csvFile.close()
 
 def subtomoDirectSaver(pdbIDList, volumesDir, subtomoIdentifier, subtomoDir, crowdLevel, SNR=1.0, generateNum=1, subtomoSizeX=50, subtomoSizeY=0, subtomoSizeZ=0):
     pass
@@ -762,11 +794,10 @@ def subtomoDirectSaver(pdbIDList, volumesDir, subtomoIdentifier, subtomoDir, cro
 #  Main Code Workspace
 ##########################################################################################################################################################################
 SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
-SHREC2021_FULLex5mrc = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2" ]
 
-SHREC2021_FULL_OCCLIST = [['1s3x', [34, 31, 28]], ['3qm1', [23, 32, 22]], ['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]], ['4cr2', [36, 27, 27]], ['5mrc', [95, 86, 74]]]
-SHREC2021_FULLexc2L2S = [ "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr" ]
-SHREC2021_1bxn = [ "1bxn" ]
+Repertoire = {
+    "SHREC2021" : SHREC2021_FULL
+}
 
 if __name__ == "__main__":
     executionStart = time.time()
@@ -775,16 +806,28 @@ if __name__ == "__main__":
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
     appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "6_2_subtomo test data"
+    DESCRIPTION = "6_4_subtomo test data"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
-    ####################################################################################################################### 
-    # for test dataset 4. : subtomo occupy percentage threshold.
-    # makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0328_compact10pV", pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    # subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_wonoise_5", "/cdata/subtomo", 0, SNR=-1, generateNum=15, subtomoSizeX=50)
-    # subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
+    # for test dataset 5. : same.
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd7(Max)", pixelSize=10.0, tomoSize=256, pfailedAttempts=200000, pparticleNum=15000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd6", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=200000, pparticleNum=10000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd5", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=100000, pparticleNum=5000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd4", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=50000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd3", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=30000, pparticleNum=2000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd2", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=20000, pparticleNum=1000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd1(Min)", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=20000, pparticleNum=800, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd4", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=15000, pparticleNum=600, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd3", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=400, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd2", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=200, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd1", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=100, rotationStep=5, JSONCOMPACT=True, verbose=True)
     
-    wgetPDB2ExactCompactMRCs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/pix1pdb2mrc_even")
+    testSet5 = [ "0405_crowd7(Max)", "0405_crowd6", "0405_crowd5", "0405_crowd4", "0405_crowd3", "0405_crowd2", "0405_crowd1(Min)", "0405_hypocrowd4", "0405_hypocrowd3", "0405_hypocrowd2", "0405_hypocrowd1" ]
+    for test in testSet5:
+        subtomoSampleSaverCSV(test, "/cdata/scenario/", f"{test}_noise2.0", "/cdata/subtomo0405", 0, SNR=2.0, generateNum=20, subtomoSizeX=50)
+    
+    #subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
+    # wgetPDB2ExactCompactMRCs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/pix1pdb2mrc_even")
     #aL = naivePDBParser("/cdata/pdbData/1bxn.pdb")
     #v, c1, c2, c3 = atomList2emCompact(aL, 1, densityNegative=False, verbose=True)
     #print(c1, c2, c3)
