@@ -1,2 +1,0 @@
-2022/04/12 00:28:41	2022/04/12 00:28:44	   239/    -1	vision	/root/eman2-sphire-sparx/bin/e2pdb2mrc.py /cdata/pdbData/1bxn.pdb /cdata/emByEMAN2/1bxn.mrc --apix 1 --res 2.7 --center
-2022/04/12 00:29:01	2022/04/12 00:29:04	   249/    -1	vision	/root/eman2-sphire-sparx/bin/e2pdb2mrc.py /cdata/pdbData/1bxn.pdb /cdata/emByEMAN2/1bxn.mrc --apix 1 --res 2.7 --center
