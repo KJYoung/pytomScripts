@@ -5,12 +5,15 @@ from pytom.basic.structures import WedgeInfo
 from urllib.error import HTTPError
 import numpy as np
 import mrcfile
-import os.path, wget, re, requests, math, random, time, json
+import os.path, os, wget, re, requests, math, random, time, json
 
 # My Other files
-from utils import volumeOutliner, volumeListWriter, volObj2Numpy, newNumpyByXYZ, volume2MRC
+from utils import volumeOutliner, volumeListWriter, volObj2Numpy, newNumpyByXYZ, volume2MRC, mrc2em, volumeResizer
 from pytomLib import recenterVolume, naivePDBParser, mmCIFParser, read, noiseApplier
 # from pytomLib import recenterVolume, naivePDBParser, mmCIFParser, vol, initSphere, WedgeInfo
+
+PYTOM = 1
+EMAN2 = 2
 
 rootDIR = "/cdata"
 pdbDataDIR = f"{rootDIR}/pdbData"
@@ -26,8 +29,6 @@ def appendMetaDataln(metadata):
     fmeta.write(metadata + "\n")
     fmeta.close()
 
-def jsonWriterV5(Dict, Write):
-    pass
 ##########################################################################################################################################################################
 #  Section for PDB ID to volume.
 ##########################################################################################################################################################################
@@ -272,16 +273,20 @@ def getResolution(filePath):
         f = open(filePath, 'r')
         pdbContent = f.read()
         f.close()
-        return float(re.findall(resPatternPDB, pdbContent)[0])
+        regexList = re.findall(resPatternPDB, pdbContent)
+        if len(regexList) == 0:
+            raise RuntimeError('resolution is not applicable from the ', filePath)
+        return float(regexList[0])
     elif filePath.endswith(".cif"):
         resPatternCIF = re.compile("_em_3d_reconstruction.resolution +([0-9]+\.[0-9]+)")
         f = open(filePath, 'r')
         cifContent = f.read()
         f.close()
-        return float(re.findall(resPatternCIF, cifContent)[0])
-        print(f"ends with cif resolution is {resolution}")
+        regexList = re.findall(resPatternCIF, cifContent)
+        if len(regexList) == 0:
+            raise RuntimeError('resolution is not applicable from the ', filePath)
+        return float(regexList[0])
     else:
-        print("Unsupported File Extension")
         raise RuntimeError('Unsupported file extenstion : ', filePath)
 
 def wgetPDB2ExactCompactMRC(pdbID, pdbDir, outputDir, overwrite=False, verbose=False):
@@ -307,6 +312,7 @@ def wgetPDB2ExactCompactMRCs(pdbIDs, pdbDir, outputDir, overwrite=False, verbose
     for pdbID in pdbIDs:
         wgetPDB2ExactCompactMRC(pdbID, pdbDir, outputDir, overwrite=overwrite, verbose=verbose)
 
+# Just download the PDB(or mmCIF if PDB not available) files
 def wgetByPDBID(pdbID, pdbDir):
     pdbPath = f"{pdbDir}/{pdbID}.pdb"
     cifPath = f"{pdbDir}/{pdbID}.cif"
@@ -335,7 +341,9 @@ def wgetByPDBID(pdbID, pdbDir):
     wget.download(URL, out=Path)
     return Path
 
-def wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=1.0, cubeSize=0.0, toCompact=False, overwrite=False, verbose=False):
+def wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=1, cubeSize=0.0, pdb2em=PYTOM, toCompact=False, overwrite=False, verbose=False):
+    if type(pixelSize) != type(int):
+        raise RuntimeError("wgetPDB2Volume : pixelSize should be Integer! ", pixelSize)
     """
     wgetPDB2Volume : Creates an PDB(CIF) file, EM file, MRC file from a PDB ID.
     @param overwrite : is for overwrite mrcfile(Volume2MRC).
@@ -343,21 +351,37 @@ def wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=1.0, cubeSize=0.0, toComp
     # pdbDir should not include dangling /
     # densityNegative for default
     volumePath = f"{volumeDir}/{pdbID}.em"
-    
+    mrcPath = f"{volumeDir}/{pdbID}.mrc"
+
     if verbose:
         print(f"wgetPDB2Volume is working with PDBID : {pdbID}")
     
     Path = wgetByPDBID(pdbID, pdbDir)
     resolution = getResolution(Path)
-    _vol = cifpdb2em(Path, pixelSize=pixelSize, cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=None, densityNegative=False, recenter=True)
-    
-    return _vol, resolution
+    print(resolution)
+    if pdb2em == PYTOM:
+        vol = cifpdb2em(Path, pixelSize=pixelSize, cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=None, densityNegative=False, recenter=True)
+    elif pdb2em == EMAN2:
+        ## --omit OMIT : Randomly omit this percentage of atoms in the output map!
+        if resolution:
+            eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --res {resolution} --center"
+            if verbose:
+                print(f"Executing ... {eman2Command}")
+        else:
+            eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --center"
+            if verbose:
+                print(f"Executing ... {eman2Command}")
+        os.system(eman2Command) # executing EMAN2
+        mrc2em(mrcPath, volumePath) # mrc2em
+        vol = read(volumePath) # em file to em object.
+        vol = volumeResizer(vol, pixelSize)
+    return vol, resolution
 
-def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, pixelSize=1.0, cubeSize=0.0, toCompact=False, overwrite=False, verbose=False):
+def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, pixelSize=1.0, cubeSize=0.0, pdb2em=PYTOM, toCompact=False, overwrite=False, verbose=False):
     createdVolumes = []
     resolutionList = []
     for pdbID in pdbIDList:
-        vol, resolution = wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=pixelSize, cubeSize=cubeSize, toCompact=toCompact, overwrite=overwrite, verbose=verbose)
+        vol, resolution = wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=pixelSize, cubeSize=cubeSize, pdb2em=pdb2em, toCompact=toCompact, overwrite=overwrite, verbose=verbose)
         createdVolumes.append(vol)
         resolutionList.append(resolution)
     return createdVolumes, resolutionList
@@ -419,15 +443,12 @@ def minmaxUpdate(minList, maxList, coordList):
             minList[i] = coordList[i]
         if maxList[i] < coordList[i]:
             maxList[i] = coordList[i]
-
 def checkOverlap(minList, maxList, curList):
     if  minList[0] <= curList[0] and curList[0] <= maxList[0] and \
         minList[1] <= curList[1] and curList[1] <= maxList[1] and \
         minList[2] <= curList[2] and curList[2] <= maxList[2] :
         return True
-    
     return False
-
 def findMinMaxByList(list):
     min = [ list[0][0], list[0][1], list[0][2] ]
     max = [ list[0][0], list[0][1], list[0][2] ]
@@ -438,7 +459,6 @@ def findMinMaxByList(list):
             if max[j] < i[j]:
                 max[j] = i[j]
     return min, max
-
 def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", toSave=True, withClassMask=False, tomoSize=128, pfailedAttempts=9000, pparticleNum=1600, rotationStep=0, JSONCOMPACT=True, verbose=False):
     # cuboidalOccupancyList = [['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]]]
     startTime = time.time()
@@ -581,7 +601,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     appendMetaDataln(f"makeScenarioByPDBIDs {scenarioIdentifier} done - time elapsed : {time.time() - startTime}s")
     appendMetaDataln(f"-output file : {scenarioVolumeFile}, cubeSize : {fulltomX}x{fulltomY}x{fulltomZ}")
     appendMetaDataln(f"-with pdbIDList : {pdbIDList}")
-    appendMetaDataln(f"-Parameter - failedAttempts : {pfailedAttempts}, resultParticleNum : {pparticleNum}")
+    appendMetaDataln(f"-Parameter - pfailedAttempts : {pfailedAttempts}, pParticleNum : {pparticleNum}")
     appendMetaDataln(f"-Result - failedAttempts : {failedAttempts}, resultParticleNum : {particleNum}")
 
     print(f"----------- Scenario generation is done... with Particle Number {particleNum}----------")
@@ -591,25 +611,35 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
         if withClassMask:
             class_mask.write(classmaskFile)
     else:
-        return volume, class_mask
+        return volume, class_mask, particleNum
 
-def makeGrandModelByPDBIDs(pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="noname", withClassMask=True, newVolume=True, pixelSize=10.0, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, rotationStep=0, JSONCOMPACT=True, verbose=False):
+def makeVolumeByPDBIDs(pdbIDList, pdbDir, volumeDir, pixelSize=10.0):
+   # PDB IDs -> PDB files -> Volume(.em) List
+    print("makeVolumeByPDBIDs : prepare volume object from the Internet. -----------")
+    volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, toCompact=True, overwrite=True, verbose=True)
+    for pdbID, volume in zip(pdbIDList, volumes):
+        volume.write(f"{volumeDir}/{pdbID}.em")
+
+def makeGrandModelByPDBIDs( pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="noname", withClassMask=True, 
+                            newVolume=True, pixelSize=10.0, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, rotationStep=0, 
+                            pdb2em=PYTOM, JSONCOMPACT=True, verbose=False):
     targetPath = f"{scenarioDir}/{scenarioIdentifier}.em"
     targetVoxelOccupyPath = f"{scenarioDir}/{scenarioIdentifier}_voxelOccupy.txt"
     maskPath = f"{scenarioDir}/{scenarioIdentifier}_class_mask.em"
     # PDB IDs -> PDB files -> Volume(.em) List
     print("makeGrandModelByPDBIDs : 1. prepare volume object from the Internet. -----------")
     if newVolume:
-        volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, toCompact=True, overwrite=True, verbose=True)
+        volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, pdb2em=pdb2em, toCompact=True, overwrite=True, verbose=True)
         for pdbID, volume in zip(pdbIDList, volumes):
             volume.write(f"{volumeDir}/{pdbID}.em")
 
     # Now, volume file is ready.
     print("makeGrandModelByPDBIDs : 2. make grandmodel. -----------------------------------")
-    volume, class_mask = makeScenarioByPDBIDs(pdbIDList, volumeDir, toSave=False, withClassMask=withClassMask, scenarioDir=scenarioDir, scenarioIdentifier=scenarioIdentifier, tomoSize=tomoSize, pfailedAttempts=pfailedAttempts, pparticleNum=pparticleNum, rotationStep=rotationStep, JSONCOMPACT=JSONCOMPACT, verbose=verbose)
+    volume, class_mask, particleNum = makeScenarioByPDBIDs(pdbIDList, volumeDir, toSave=False, withClassMask=withClassMask, scenarioDir=scenarioDir, scenarioIdentifier=scenarioIdentifier, tomoSize=tomoSize, pfailedAttempts=pfailedAttempts, pparticleNum=pparticleNum, rotationStep=rotationStep, JSONCOMPACT=JSONCOMPACT, verbose=verbose)
 
     volume.write(targetPath)
     class_mask.write(maskPath)
+    return particleNum
 ##########################################################################################################################################################################
 #  Section for Simulation.
 def compactRandomRotation(inputVolume, rotationStep = 1, toSave = False):
@@ -794,9 +824,10 @@ def subtomoDirectSaver(pdbIDList, volumesDir, subtomoIdentifier, subtomoDir, cro
 #  Main Code Workspace
 ##########################################################################################################################################################################
 SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
-
+PDB2MRC_BENCHSET = [ "5fij" ]
 Repertoire = {
-    "SHREC2021" : SHREC2021_FULL
+    "SHREC2021" : SHREC2021_FULL,
+    "PDB2MRC1"  : PDB2MRC_BENCHSET
 }
 
 if __name__ == "__main__":
@@ -806,26 +837,28 @@ if __name__ == "__main__":
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
     appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "6_4_subtomo test data"
+    DESCRIPTION = "6_5_EMAN merged"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
-    # for test dataset 5. : same.
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd7(Max)", pixelSize=10.0, tomoSize=256, pfailedAttempts=200000, pparticleNum=15000, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd6", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=200000, pparticleNum=10000, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd5", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=100000, pparticleNum=5000, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd4", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=50000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd3", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=30000, pparticleNum=2000, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd2", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=20000, pparticleNum=1000, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd1(Min)", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=20000, pparticleNum=800, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd4", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=15000, pparticleNum=600, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd3", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=400, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd2", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=200, rotationStep=5, JSONCOMPACT=True, verbose=True)
-    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd1", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=10000, pparticleNum=100, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    # for test dataset 6. : EMAN2.
+    #particleNum = makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0411_crowd5(Max)", pixelSize=10, tomoSize=256, pfailedAttempts=200000, pparticleNum=9999999, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+    #print(particleNum)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd4", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=50000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd3", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=30000, pparticleNum=2000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd2", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=20000, pparticleNum=1000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd1(Min)", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=20000, pparticleNum=800, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd4", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=15000, pparticleNum=600, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd3", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=10000, pparticleNum=400, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd2", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=10000, pparticleNum=200, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_hypocrowd1", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=10000, pparticleNum=100, rotationStep=5, JSONCOMPACT=True, verbose=True)
+    #testSet5 = [ "0405_crowd7(Max)", "0405_crowd6", "0405_crowd5", "0405_crowd4", "0405_crowd3", "0405_crowd2", "0405_crowd1(Min)", "0405_hypocrowd4", "0405_hypocrowd3", "0405_hypocrowd2", "0405_hypocrowd1" ]
+    #for test in testSet5:
+    #    subtomoSampleSaverCSV(test, "/cdata/scenario/", f"{test}_noise2.0", "/cdata/subtomo0405", 0, SNR=2.0, generateNum=20, subtomoSizeX=50)
     
-    testSet5 = [ "0405_crowd7(Max)", "0405_crowd6", "0405_crowd5", "0405_crowd4", "0405_crowd3", "0405_crowd2", "0405_crowd1(Min)", "0405_hypocrowd4", "0405_hypocrowd3", "0405_hypocrowd2", "0405_hypocrowd1" ]
-    for test in testSet5:
-        subtomoSampleSaverCSV(test, "/cdata/scenario/", f"{test}_noise2.0", "/cdata/subtomo0405", 0, SNR=2.0, generateNum=20, subtomoSizeX=50)
+    volByEMAN2 = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByEMAN2", pixelSize=10, pdb2em=EMAN2, toCompact=True, overwrite=True, verbose=True)
+    volByPytom = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByPyTom", pixelSize=10, pdb2em=PYTOM, toCompact=True, overwrite=True, verbose=True)
     
+    #makeVolumeByPDBIDs(PDB2MRC_BENCHSET, "/cdata/pdbData", "/cdata/resolution4")
     #subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
     # wgetPDB2ExactCompactMRCs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/pix1pdb2mrc_even")
     #aL = naivePDBParser("/cdata/pdbData/1bxn.pdb")

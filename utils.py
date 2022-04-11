@@ -5,8 +5,17 @@ import mrcfile
 import numpy as np
 ################################
 # matrixToVolLayerX, Y, Z
+## def matrixToVolLayerZ(vol, matrix, zheight)
 # volumeOutliner
+## def volumeOutliner(inputVolumes, isFile=False, outlineValue=10)
 # volumeListWriter
+## def volumeListWriter(inputVolumes, outputDir, Description, JSON=None)
+# volume2MRC
+## def volume2MRC(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False)
+# volObj2Numpy
+## def volObj2Numpy(inputVolume, floatMRC=False)
+# newNumpyByXYZ
+## def newNumpyByXYZ(x, y, z, floatMRC=False)
 ################################
 ## Write 2D matrix into the volume 
 def matrixToVolLayerZ(vol, matrix, zheight):
@@ -82,7 +91,10 @@ def volume2MRC(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False)
         for j in range(inputVolume.sizeY()):
             for k in range(inputVolume.sizeZ()):
                 #print(type(inputVolume.getV(i,j,k)))
-                volumeData[i,j,k] = inputVolume.getV(i,j,k)
+                try:
+                    volumeData[i,j,k] = inputVolume.getV(i,j,k)
+                except:
+                    pass
     
     with mrcfile.new(mrcPath, overwrite=overwrite) as mrc:
         mrc.set_data(volumeData)
@@ -112,3 +124,55 @@ def newNumpyByXYZ(x, y, z, floatMRC=False):
     
     return volumeData
 
+# Too slow : mine 13.25 / pytom 0.583
+# def mrcPath2volumeObj(mrcPath):
+#     with mrcfile.open(mrcPath) as mrc:
+#         mrcData = mrc.data
+#         x, y, z = mrcData.shape
+#         volume = vol(x, y, z)
+#         volume.setAll(0.0)
+#         for i in range(x):
+#             for j in range(y):
+#                 for k in range(z):
+#                     volume.setV(float(mrcData[i][j][k]), i, j, k)
+#         return volume
+
+def mrc2em(filename,destname):
+    from pytom.basic.files import read
+    from pytom.tools.files import checkFileExists,checkDirExists
+    if not checkFileExists(filename):
+        raise RuntimeError('MRC file not found! ',filename)
+    emfile = read(filename)
+    emfile.write(destname,'em')
+
+def volumeResizer(inputVolume, ratioInt): # 1->10 : input 10
+    import math
+    ratio = 1.0 / ratioInt
+    if ratio == 1.0:
+        return inputVolume
+    
+    X, Y, Z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
+    resizedSizeX = math.ceil( (inputVolume.sizeX() - 1) * ratio ) +1
+    resizedSizeY = math.ceil( (inputVolume.sizeY() - 1) * ratio ) +1
+    resizedSizeZ = math.ceil( (inputVolume.sizeZ() - 1) * ratio ) +1
+    outputVolume = vol(resizedSizeX, resizedSizeY, resizedSizeZ)
+    outputVolume.setAll(0.0)
+    
+    for i in range(X):
+        for j in range(Y):
+            for k in range(Z):
+                val = inputVolume.getV(i,j,k)
+                if val != 0.0:
+                    val /= (ratioInt*ratioInt*ratioInt)
+                    newIdxX, newIdxY, newIdxZ = math.floor( i * ratio ), math.floor( j * ratio ), math.floor( k * ratio )
+                    lowFacX, lowFacY, lowFacZ = float(i - newIdxX * ratioInt)/ratioInt, float(j - newIdxY * ratioInt)/ratioInt, float(k - newIdxZ * ratioInt)/ratioInt
+
+                    outputVolume.setV( outputVolume.getV(newIdxX, newIdxY, newIdxZ) + (1-lowFacX)*(1-lowFacY)*(1-lowFacZ)*val ,newIdxX, newIdxY, newIdxZ)
+                    outputVolume.setV( outputVolume.getV(newIdxX, newIdxY, newIdxZ+1) + (1-lowFacX)*(1-lowFacY)*(lowFacZ)*val ,newIdxX, newIdxY, newIdxZ+1)
+                    outputVolume.setV( outputVolume.getV(newIdxX, newIdxY+1, newIdxZ) + (1-lowFacX)*(lowFacY)*(1-lowFacZ)*val ,newIdxX, newIdxY+1, newIdxZ)
+                    outputVolume.setV( outputVolume.getV(newIdxX, newIdxY+1, newIdxZ+1) + (1-lowFacX)*(lowFacY)*(lowFacZ)*val ,newIdxX, newIdxY+1, newIdxZ+1)
+                    outputVolume.setV( outputVolume.getV(newIdxX+1, newIdxY, newIdxZ) + (lowFacX)*(1-lowFacY)*(1-lowFacZ)*val ,newIdxX+1, newIdxY, newIdxZ)
+                    outputVolume.setV( outputVolume.getV(newIdxX+1, newIdxY, newIdxZ+1) + (lowFacX)*(1-lowFacY)*(lowFacZ)*val ,newIdxX+1, newIdxY, newIdxZ+1)
+                    outputVolume.setV( outputVolume.getV(newIdxX+1, newIdxY+1, newIdxZ) + (lowFacX)*(lowFacY)*(1-lowFacZ)*val ,newIdxX+1, newIdxY+1, newIdxZ)
+                    outputVolume.setV( outputVolume.getV(newIdxX+1, newIdxY+1, newIdxZ+1) + (lowFacX)*(lowFacY)*(lowFacZ)*val ,newIdxX+1, newIdxY+1, newIdxZ+1)
+    return outputVolume
