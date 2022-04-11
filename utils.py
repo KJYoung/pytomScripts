@@ -128,7 +128,7 @@ def newNumpyByXYZ(x, y, z, floatMRC=False):
     return volumeData
 
 def volumeResizer(inputVolume, ratioInt): # 1->10 : input 10
-    if type(ratioInt) != type(int):
+    if type(ratioInt) != type(1):
         raise RuntimeError('volumeResizer : ratioInt should be Integer! ', ratioInt)
 
     if ratioInt == 1:

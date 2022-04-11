@@ -112,23 +112,23 @@ def wgetByPDBID(pdbID, pdbDir):
     return Path
 
 def wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=1, cubeSize=0.0, pdb2em=PYTOM, toCompact=False, overwrite=False, verbose=False):
-    if type(pixelSize) != type(int):
+    if type(pixelSize) != type(1):
         raise RuntimeError("wgetPDB2Volume : pixelSize should be Integer! ", pixelSize)
     """
     wgetPDB2Volume : Creates an PDB(CIF) file, EM file, MRC file from a PDB ID.
     @param overwrite : is for overwrite mrcfile(Volume2MRC).
     """
     # pdbDir should not include dangling /
-    # densityNegative for default
+
     volumePath = f"{volumeDir}/{pdbID}.em"
     mrcPath = f"{volumeDir}/{pdbID}.mrc"
 
     if verbose:
-        print(f"wgetPDB2Volume is working with PDBID : {pdbID}")
+        print(f"wgetPDB2Volume is working with PDBID : {pdbID} -----------------------------------")
     
     Path = wgetByPDBID(pdbID, pdbDir)
     resolution = getResolution(Path)
-    print(resolution)
+
     if pdb2em == PYTOM:
         vol = cifpdb2em(Path, pixelSize=pixelSize, cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=None, densityNegative=False, recenter=True)
     elif pdb2em == EMAN2:
