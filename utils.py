@@ -3,6 +3,7 @@ from pytom_volume import vol
 import json
 import mrcfile
 import numpy as np
+import math
 ################################
 # matrixToVolLayerX, Y, Z
 ## def matrixToVolLayerZ(vol, matrix, zheight)
@@ -16,6 +17,8 @@ import numpy as np
 ## def volObj2Numpy(inputVolume, floatMRC=False)
 # newNumpyByXYZ
 ## def newNumpyByXYZ(x, y, z, floatMRC=False)
+# volumeResizer
+## def volumeResizer(inputVolume, ratioInt)
 ################################
 ## Write 2D matrix into the volume 
 def matrixToVolLayerZ(vol, matrix, zheight):
@@ -124,37 +127,21 @@ def newNumpyByXYZ(x, y, z, floatMRC=False):
     
     return volumeData
 
-# Too slow : mine 13.25 / pytom 0.583
-# def mrcPath2volumeObj(mrcPath):
-#     with mrcfile.open(mrcPath) as mrc:
-#         mrcData = mrc.data
-#         x, y, z = mrcData.shape
-#         volume = vol(x, y, z)
-#         volume.setAll(0.0)
-#         for i in range(x):
-#             for j in range(y):
-#                 for k in range(z):
-#                     volume.setV(float(mrcData[i][j][k]), i, j, k)
-#         return volume
-
-def mrc2em(filename,destname):
-    from pytom.basic.files import read
-    from pytom.tools.files import checkFileExists,checkDirExists
-    if not checkFileExists(filename):
-        raise RuntimeError('MRC file not found! ',filename)
-    emfile = read(filename)
-    emfile.write(destname,'em')
-
 def volumeResizer(inputVolume, ratioInt): # 1->10 : input 10
-    import math
-    ratio = 1.0 / ratioInt
-    if ratio == 1.0:
+    if type(ratioInt) != type(int):
+        raise RuntimeError('volumeResizer : ratioInt should be Integer! ', ratioInt)
+
+    if ratioInt == 1:
         return inputVolume
     
+    ratio = 1.0 / ratioInt
+
     X, Y, Z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
-    resizedSizeX = math.ceil( (inputVolume.sizeX() - 1) * ratio ) +1
-    resizedSizeY = math.ceil( (inputVolume.sizeY() - 1) * ratio ) +1
-    resizedSizeZ = math.ceil( (inputVolume.sizeZ() - 1) * ratio ) +1
+    
+    resizedSizeX = math.ceil( (X - 1) * ratio ) + 1
+    resizedSizeY = math.ceil( (Y - 1) * ratio ) + 1
+    resizedSizeZ = math.ceil( (Z - 1) * ratio ) + 1
+    
     outputVolume = vol(resizedSizeX, resizedSizeY, resizedSizeZ)
     outputVolume.setAll(0.0)
     

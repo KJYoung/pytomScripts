@@ -17,9 +17,9 @@ This scripts are under development. Not optimized code.
 7. PYTOM's em2mrc generates mrc file much faster. [ for certain file(1_withoutrotation.em) : 99s vs 6.6s ]
    1. But, mrcfile.validate -> false.
    2. int mode mrc generated. -> File size is efficient : 134.2M vs 536.9M
-8. Dimension adjustment
-9. Subtomogram generator
-
+8. Dimension adjustment   
+9. Subtomogram generator   
+10. EMAN2-based mrc converter merged   
 
 ### TODO1.
 1. EMDB not PDB
@@ -27,7 +27,6 @@ This scripts are under development. Not optimized code.
 2. Direct Subtomo not from Grandmodel
 3. Subtomo percentage
 4. Grandmodel particle distribution(ratio)
-
 
 ### TODO2.
 1. Standalone...
@@ -43,3 +42,4 @@ This scripts are under development. Not optimized code.
 20220313 24:00 - (Until today) Rotation.   
 20220321 16:00 - (Until today) Subtomogram generator, Metadata writer.   
 20220402 04:00 - (Until today) mrc output. dimension adjustment.   
+20220411 23:00 - (Until today) EMAN2 merged. volumeResizer(with average mode).
