@@ -19,6 +19,8 @@ import math
 ## def newNumpyByXYZ(x, y, z, floatMRC=False)
 # volumeResizer
 ## def volumeResizer(inputVolume, ratioInt)
+# makeCompact
+## def makeCompact(inputVolume)
 ################################
 ## Write 2D matrix into the volume 
 def matrixToVolLayerZ(vol, matrix, zheight):
@@ -79,31 +81,6 @@ def volumeListWriter(inputVolumes, outputDir, Description, JSON=None):
             
             index += 1
 
-def volume2MRC(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False):
-    inputVolume = read(volPath)
-    x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
-    if verbose:
-        print(f"Volume dimension is initially... {x}x{y}x{z}")
-    
-    if floatMRC:
-        volumeData = np.zeros([x, y, z], dtype = np.float32)
-    else:
-        volumeData = np.zeros([x, y, z], dtype = np.int8)
-    
-    for i in range(inputVolume.sizeX()):
-        for j in range(inputVolume.sizeY()):
-            for k in range(inputVolume.sizeZ()):
-                #print(type(inputVolume.getV(i,j,k)))
-                try:
-                    volumeData[i,j,k] = inputVolume.getV(i,j,k)
-                except:
-                    pass
-    
-    with mrcfile.new(mrcPath, overwrite=overwrite) as mrc:
-        mrc.set_data(volumeData)
-        print(f"mrc data dimension is converted to... {mrc.data.shape}")
-    return
-
 def volObj2Numpy(inputVolume, floatMRC=False):
     x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
     
@@ -163,3 +140,32 @@ def volumeResizer(inputVolume, ratioInt): # 1->10 : input 10
                     outputVolume.setV( outputVolume.getV(newIdxX+1, newIdxY+1, newIdxZ) + (lowFacX)*(lowFacY)*(1-lowFacZ)*val ,newIdxX+1, newIdxY+1, newIdxZ)
                     outputVolume.setV( outputVolume.getV(newIdxX+1, newIdxY+1, newIdxZ+1) + (lowFacX)*(lowFacY)*(lowFacZ)*val ,newIdxX+1, newIdxY+1, newIdxZ+1)
     return outputVolume
+
+def makeCompact(inputVolume):
+    x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
+    min = [x+1, y+1, z+1]
+    max = [-1, -1, -1]
+    for i in range(x):
+        for j in range(y):
+            for k in range(z):
+                if(inputVolume.getV(i,j,k) != 0):
+                    if i > max[0]:
+                        max[0] = i
+                    elif i < min[0]:
+                        min[0] = i
+                    if j > max[1]:
+                        max[1] = j
+                    elif j < min[1]:
+                        min[1] = j
+                    if k > max[2]:
+                        max[2] = k
+                    elif k < min[2]:
+                        min[2] = k
+    dif = [max[0]-min[0]+1, max[1]-min[1]+1, max[2]-min[2]+1]
+    compactVol = vol(dif[0], dif[1], dif[2])
+    compactVol.setAll(0.0)
+    for i in range(dif[0]):
+        for j in range(dif[1]):
+            for k in range(dif[2]):
+                compactVol.setV( inputVolume.getV(i+min[0], j+min[1], k+min[2]) , i, j, k)
+    return compactVol

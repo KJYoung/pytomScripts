@@ -8,8 +8,8 @@ import mrcfile
 import os.path, os, wget, re, requests, math, random, time, json
 
 # My Other files
-from type_convert import em2mrc, atomList2emCube, atomList2em, cifpdb2em, mrc2em
-from utils import volumeOutliner, volumeListWriter, volObj2Numpy, newNumpyByXYZ, volume2MRC, volumeResizer
+from type_convert import em2mrc, atomList2emCube, cifpdb2em, mrc2em, volume2MRC
+from utils import volumeOutliner, volumeListWriter, volObj2Numpy, newNumpyByXYZ, volumeResizer, makeCompact
 from pytomLib import recenterVolume, naivePDBParser, mmCIFParser, read, noiseApplier
 
 PYTOM = 1
@@ -24,169 +24,13 @@ singleParticleMRCCubeDIR = f"{rootDIR}/singleParticleMRC_cube"
 scenarioDIR = f"{rootDIR}/scenario"
 metadataFILE = f"{rootDIR}/metadata.txt"
 
+##########################################################################################################################################################################
+#  Section for Utils.
+##########################################################################################################################################################################
 def appendMetaDataln(metadata):
     fmeta = open(metadataFILE, "a")
     fmeta.write(metadata + "\n")
     fmeta.close()
-
-##########################################################################################################################################################################
-#  Section for wget.
-##########################################################################################################################################################################
-def getResolution(filePath):
-    from pytom.tools.files import checkFileExists
-
-    if not checkFileExists(filePath):
-        raise RuntimeError('resolutionResize : input File not found! ', filePath)
-    
-    if filePath.endswith(".pdb"):
-        resPatternPDB = re.compile("RESOLUTION\..*([0-9]+\.[0-9]+).*ANGSTROMS")
-        f = open(filePath, 'r')
-        pdbContent = f.read()
-        f.close()
-        regexList = re.findall(resPatternPDB, pdbContent)
-        if len(regexList) == 0:
-            raise RuntimeError('resolution is not applicable from the ', filePath)
-        return float(regexList[0])
-    elif filePath.endswith(".cif"):
-        resPatternCIF = re.compile("_em_3d_reconstruction.resolution +([0-9]+\.[0-9]+)")
-        f = open(filePath, 'r')
-        cifContent = f.read()
-        f.close()
-        regexList = re.findall(resPatternCIF, cifContent)
-        if len(regexList) == 0:
-            raise RuntimeError('resolution is not applicable from the ', filePath)
-        return float(regexList[0])
-    else:
-        raise RuntimeError('Unsupported file extenstion : ', filePath)
-
-def wgetPDB2ExactCompactMRC(pdbID, pdbDir, outputDir, overwrite=False, verbose=False):
-    """
-    wgetPDB2ExactCompactVolume : Creates an PDB(CIF) file, EM file, MRC file from a PDB ID.
-    @param overwrite : is for overwrite mrcfile(Volume2MRC).
-    """
-    # pdbDir should not include dangling /
-    volumePath = f"{outputDir}/{pdbID}.em"
-    mrcPath = f"{outputDir}/{pdbID}.mrc"
-    if verbose:
-        print(f"wgetPDB2ExactCompactMRC is working with PDBID : {pdbID}")
-    
-    Path = wgetByPDBID(pdbID, pdbDir)
-    resolution = getResolution(Path)
-    _vol = cifpdb2em(Path, pixelSize=1.0, cubeSize=0.0, toCompact=True, chain=None, fname=None, densityNegative=False, recenter=True)
-    
-    _vol.write(volumePath)
-    volume2MRC(volumePath, mrcPath, floatMRC=True, overwrite=overwrite, verbose=verbose)
-    #return _vol, resolution
-
-def wgetPDB2ExactCompactMRCs(pdbIDs, pdbDir, outputDir, overwrite=False, verbose=False):
-    for pdbID in pdbIDs:
-        wgetPDB2ExactCompactMRC(pdbID, pdbDir, outputDir, overwrite=overwrite, verbose=verbose)
-
-# Just download the PDB(or mmCIF if PDB not available) files
-def wgetByPDBID(pdbID, pdbDir):
-    pdbPath = f"{pdbDir}/{pdbID}.pdb"
-    cifPath = f"{pdbDir}/{pdbID}.cif"
-    pdbURL = f"https://files.rcsb.org/view/{pdbID}.pdb"
-    cifURL = f"https://files.rcsb.org/view/{pdbID}.cif"
-
-    if os.path.isfile(pdbPath):
-        return pdbPath
-    if os.path.isfile(cifPath):
-        return cifPath
-
-    isPDB = True
-    URL = ""
-    Path = ""
-    response = requests.get(pdbURL)
-    if not response.status_code == 200:
-        response = requests.get(cifURL)
-        if not response.status_code == 200:
-            raise RuntimeError("Invalid pdb ID maybe, ", pdbID)
-        isPDB = False
-        URL = cifURL
-        Path = cifPath
-    else:
-        URL = pdbURL
-        Path = pdbPath
-    wget.download(URL, out=Path)
-    return Path
-
-def wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=1, cubeSize=0.0, pdb2em=PYTOM, toCompact=False, overwrite=False, verbose=False):
-    if type(pixelSize) != type(1):
-        raise RuntimeError("wgetPDB2Volume : pixelSize should be Integer! ", pixelSize)
-    """
-    wgetPDB2Volume : Creates an PDB(CIF) file, EM file, MRC file from a PDB ID.
-    @param overwrite : is for overwrite mrcfile(Volume2MRC).
-    """
-    # pdbDir should not include dangling /
-
-    volumePath = f"{volumeDir}/{pdbID}.em"
-    mrcPath = f"{volumeDir}/{pdbID}.mrc"
-
-    if verbose:
-        print(f"wgetPDB2Volume is working with PDBID : {pdbID} -----------------------------------")
-    
-    Path = wgetByPDBID(pdbID, pdbDir)
-    resolution = getResolution(Path)
-
-    if pdb2em == PYTOM:
-        vol = cifpdb2em(Path, pixelSize=pixelSize, cubeSize=cubeSize, toCompact=toCompact, chain=None, fname=None, densityNegative=False, recenter=True)
-    elif pdb2em == EMAN2:
-        ## --omit OMIT : Randomly omit this percentage of atoms in the output map!
-        if resolution:
-            eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --res {resolution} --center"
-            if verbose:
-                print(f"Executing ... {eman2Command}")
-        else:
-            eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --center"
-            if verbose:
-                print(f"Executing ... {eman2Command}")
-        os.system(eman2Command) # executing EMAN2
-        mrc2em(mrcPath, volumePath) # mrc2em
-        vol = read(volumePath) # em file to em object.
-        vol = volumeResizer(vol, pixelSize)
-    return vol, resolution
-
-def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, pixelSize=1.0, cubeSize=0.0, pdb2em=PYTOM, toCompact=False, overwrite=False, verbose=False):
-    createdVolumes = []
-    resolutionList = []
-    for pdbID in pdbIDList:
-        vol, resolution = wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=pixelSize, cubeSize=cubeSize, pdb2em=pdb2em, toCompact=toCompact, overwrite=overwrite, verbose=verbose)
-        createdVolumes.append(vol)
-        resolutionList.append(resolution)
-    return createdVolumes, resolutionList
-
-def makeCompact(inputVolume):
-    x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
-    min = [x+1, y+1, z+1]
-    max = [-1, -1, -1]
-    for i in range(x):
-        for j in range(y):
-            for k in range(z):
-                if(inputVolume.getV(i,j,k) != 0):
-                    if i > max[0]:
-                        max[0] = i
-                    elif i < min[0]:
-                        min[0] = i
-                    if j > max[1]:
-                        max[1] = j
-                    elif j < min[1]:
-                        min[1] = j
-                    if k > max[2]:
-                        max[2] = k
-                    elif k < min[2]:
-                        min[2] = k
-    dif = [max[0]-min[0]+1, max[1]-min[1]+1, max[2]-min[2]+1]
-    compactVol = vol(dif[0], dif[1], dif[2])
-    compactVol.setAll(0.0)
-    for i in range(dif[0]):
-        for j in range(dif[1]):
-            for k in range(dif[2]):
-                compactVol.setV( inputVolume.getV(i+min[0], j+min[1], k+min[2]) , i, j, k)
-    return compactVol
-##########################################################################################################################################################################
-#  Section for Multi particle scenario.
-##########################################################################################################################################################################
 def getMedadataJsonTemplate():
     ''' JSON format
     "v6": {
@@ -219,16 +63,133 @@ def checkOverlap(minList, maxList, curList):
         minList[2] <= curList[2] and curList[2] <= maxList[2] :
         return True
     return False
-def findMinMaxByList(list):
-    min = [ list[0][0], list[0][1], list[0][2] ]
-    max = [ list[0][0], list[0][1], list[0][2] ]
-    for i in list:
+def findMinMaxByList(listArg):
+    min = [ listArg[0][0], listArg[0][1], listArg[0][2] ]
+    max = [ listArg[0][0], listArg[0][1], listArg[0][2] ]
+    for i in listArg:
         for j in range(3):
             if min[j] > i[j]:
                 min[j] = i[j]
             if max[j] < i[j]:
                 max[j] = i[j]
     return min, max
+##########################################################################################################################################################################
+#  Section for wget.
+##########################################################################################################################################################################
+def getResolution(filePath):
+    from pytom.tools.files import checkFileExists
+
+    if not checkFileExists(filePath):
+        raise RuntimeError('resolutionResize : input File not found! ', filePath)
+    
+    if filePath.endswith(".pdb"):
+        resPatternPDB = re.compile("RESOLUTION\..*([0-9]+\.[0-9]+).*ANGSTROMS")
+        f = open(filePath, 'r')
+        pdbContent = f.read()
+        f.close()
+        regexList = re.findall(resPatternPDB, pdbContent)
+        if len(regexList) == 0:
+            raise RuntimeError('resolution is not applicable from the ', filePath)
+        return float(regexList[0])
+    elif filePath.endswith(".cif"):
+        resPatternCIF = re.compile("_em_3d_reconstruction.resolution +([0-9]+\.[0-9]+)")
+        f = open(filePath, 'r')
+        cifContent = f.read()
+        f.close()
+        regexList = re.findall(resPatternCIF, cifContent)
+        if len(regexList) == 0:
+            raise RuntimeError('resolution is not applicable from the ', filePath)
+        return float(regexList[0])
+    else:
+        raise RuntimeError('Unsupported file extenstion : ', filePath)
+
+def wgetPDB2ExactCompactMRC(pdbID, pdbDir, outputDir, overwrite=False):
+    volumePath = f"{outputDir}/{pdbID}.em"
+    mrcPath = f"{outputDir}/{pdbID}.mrc"
+    
+    print(f"wgetPDB2ExactCompactMRC : working with PDBID : {pdbID}")
+    
+    Path = wgetByPDBID(pdbID, pdbDir)
+    resolution = getResolution(Path)
+    _vol = cifpdb2em(Path, pixelSize=1.0, chain=None, fname=None)
+    
+    _vol.write(volumePath)
+    volume2MRC(volumePath, mrcPath, floatMRC=True, overwrite=overwrite, verbose=verbose)
+    #return _vol, resolution
+
+def wgetPDB2ExactCompactMRCs(pdbIDs, pdbDir, outputDir, overwrite=False, verbose=False):
+    for pdbID in pdbIDs:
+        wgetPDB2ExactCompactMRC(pdbID, pdbDir, outputDir, overwrite=overwrite, verbose=verbose)
+
+# Download pdbID.pdb or pdbID.cif(if .pdb not available) file into pdbDir
+def wgetByPDBID(pdbID, pdbDir):
+    pdbPath = f"{pdbDir}/{pdbID}.pdb"
+    cifPath = f"{pdbDir}/{pdbID}.cif"
+    pdbURL = f"https://files.rcsb.org/view/{pdbID}.pdb"
+    cifURL = f"https://files.rcsb.org/view/{pdbID}.cif"
+
+    if os.path.isfile(pdbPath):
+        return pdbPath
+    if os.path.isfile(cifPath):
+        return cifPath
+
+    if not requests.get(pdbURL).status_code == 200:
+        if not requests.get(cifURL).status_code == 200:
+            raise RuntimeError("Invalid pdb ID(Cannot download)! ", pdbID)
+        isPDB = False
+        URL = cifURL
+        Path = cifPath
+    else:
+        isPDB = True
+        URL = pdbURL
+        Path = pdbPath
+    wget.download(URL, out=Path)
+    return Path
+
+"""
+wgetPDB2Volume : 
+    1. Creates an PDB(CIF) file by wgetByPDBID.
+    2.  EM file, MRC file from a PDB ID.
+@param pdbDir : should not include the dangling '/'
+@param overwrite : is for overwrite mrcfile(Volume2MRC).
+"""
+def wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=1, pdb2em=PYTOM, overwrite=False):
+    if type(pixelSize) != type(1):
+        raise RuntimeError("wgetPDB2Volume : pixelSize should be Integer! ", pixelSize)
+    print(f"wgetPDB2Volume is working with PDBID : {pdbID} -----------------------------------")
+
+    volumePath = f"{volumeDir}/{pdbID}.em"
+    mrcPath = f"{volumeDir}/{pdbID}.mrc"
+    Path = wgetByPDBID(pdbID, pdbDir)
+    resolution = getResolution(Path)
+
+    if pdb2em == PYTOM:
+        vol = cifpdb2em(Path, pixelSize=pixelSize, chain=None, fname=None)
+    elif pdb2em == EMAN2:
+        ## --omit OMIT : Randomly omit this percentage of atoms in the output map!
+        if resolution:
+            eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --res {resolution} --center"
+        else:
+            eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --center"
+        print(f"Executing ... {eman2Command}")
+        os.system(eman2Command) # executing EMAN2
+        mrc2em(mrcPath, volumePath) # mrc2em
+        vol = read(volumePath) # em file to em object.
+        vol = volumeResizer(vol, pixelSize) # average resizer.
+    return vol, resolution
+
+def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, pixelSize=1.0, pdb2em=PYTOM, overwrite=False):
+    createdVolumes = []
+    resolutionList = []
+    for pdbID in pdbIDList:
+        vol, resolution = wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=pixelSize, pdb2em=pdb2em, overwrite=overwrite)
+        createdVolumes.append(vol)
+        resolutionList.append(resolution)
+    return createdVolumes, resolutionList
+
+##########################################################################################################################################################################
+#  Section for Multi particle scenario.
+##########################################################################################################################################################################
 def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", toSave=True, withClassMask=False, tomoSize=128, pfailedAttempts=9000, pparticleNum=1600, rotationStep=0, JSONCOMPACT=True, verbose=False):
     # cuboidalOccupancyList = [['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]]]
     startTime = time.time()
@@ -350,7 +311,6 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
                             minmaxUpdate(minCoord, maxCoord, [ x+i, y+j, z+k ])
                             if withClassMask:
                                 class_mask.setV( classNum, x+i, y+j, z+k)
-
                             occupyVoxels.append( [x+i, y+j, z+k] )
     
             if JSONCOMPACT:
@@ -369,7 +329,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     
     # --- META DATA ---
     appendMetaDataln(f"makeScenarioByPDBIDs {scenarioIdentifier} done - time elapsed : {time.time() - startTime}s")
-    appendMetaDataln(f"-output file : {scenarioVolumeFile}, cubeSize : {fulltomX}x{fulltomY}x{fulltomZ}")
+    appendMetaDataln(f"-output file : {scenarioVolumeFile}, fulltomoSize : {fulltomX}x{fulltomY}x{fulltomZ}")
     appendMetaDataln(f"-with pdbIDList : {pdbIDList}")
     appendMetaDataln(f"-Parameter - pfailedAttempts : {pfailedAttempts}, pParticleNum : {pparticleNum}")
     appendMetaDataln(f"-Result - failedAttempts : {failedAttempts}, resultParticleNum : {particleNum}")
@@ -386,7 +346,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
 def makeVolumeByPDBIDs(pdbIDList, pdbDir, volumeDir, pixelSize=10.0):
    # PDB IDs -> PDB files -> Volume(.em) List
     print("makeVolumeByPDBIDs : prepare volume object from the Internet. -----------")
-    volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, toCompact=True, overwrite=True, verbose=True)
+    volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, overwrite=True)
     for pdbID, volume in zip(pdbIDList, volumes):
         volume.write(f"{volumeDir}/{pdbID}.em")
 
@@ -399,7 +359,7 @@ def makeGrandModelByPDBIDs( pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioI
     # PDB IDs -> PDB files -> Volume(.em) List
     print("makeGrandModelByPDBIDs : 1. prepare volume object from the Internet. -----------")
     if newVolume:
-        volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, pdb2em=pdb2em, toCompact=True, overwrite=True, verbose=True)
+        volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, pdb2em=pdb2em, overwrite=True, verbose=True)
         for pdbID, volume in zip(pdbIDList, volumes):
             volume.write(f"{volumeDir}/{pdbID}.em")
 
@@ -431,7 +391,6 @@ def subtomoSampleSaver(tomoIdentifier, scenarioDir, subtomoIdentifier, subtomoDi
         subtomoSizeZ = subtomoSizeX
     
     scenarioVolume = read(f'{scenarioDir}/{tomoIdentifier}.em')
-    
     particleCenters = []
     # Load txt file
     with open(f'{scenarioDir}/{tomoIdentifier}.txt') as scenarioParticleTxt:
@@ -615,8 +574,8 @@ if __name__ == "__main__":
     #for test in testSet5:
     #    subtomoSampleSaverCSV(test, "/cdata/scenario/", f"{test}_noise2.0", "/cdata/subtomo0405", 0, SNR=2.0, generateNum=20, subtomoSizeX=50)
     
-    volByEMAN2 = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByEMAN2", pixelSize=10, pdb2em=EMAN2, toCompact=True, overwrite=True, verbose=True)
-    volByPytom = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByPyTom", pixelSize=10, pdb2em=PYTOM, toCompact=True, overwrite=True, verbose=True)
+    volByEMAN2 = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByEMAN2", pixelSize=10, pdb2em=EMAN2, overwrite=True, verbose=True)
+    volByPytom = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByPyTom", pixelSize=10, pdb2em=PYTOM, overwrite=True, verbose=True)
     
     #makeVolumeByPDBIDs(PDB2MRC_BENCHSET, "/cdata/pdbData", "/cdata/resolution4")
     #subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)

@@ -1,9 +1,9 @@
 
 # em2mrc
 # atomList2emCube
-# atomList2em
 # cifpdb2em
 # mrc2em
+# volume2mrc
 from pytom_volume import vol
 from pytomLib import recenterVolume, naivePDBParser, mmCIFParser, read
 
@@ -121,119 +121,30 @@ def atomList2emCube(atomList, pixelSize, densityNegative=False, resolutionFactor
     # return volumeCompact, cubeSize/2, cubeSize/2, cubeSize/2
     return volumeCompact
 
-def atomList2em(atomList, pixelSize, cubeSize, densityNegative=False):
-    """
-    atomList2em:
-    @param atomList:
-    @param pixelSize:
-    @param cubeSize:
-    @param densityNegative:
-    @return:    
-    """
-    from math import floor
-    from pytom_volume import vol
-
-    if len(atomList) == 0:
-        raise RuntimeError('atomList2em : Your atom list is empty!')
-
-    # get map
-    volume = vol(cubeSize, cubeSize, cubeSize)
-    volume.setAll(0.0)
-
-    centroidX = 0
-    centroidY = 0
-    centroidZ = 0
-
-    for i in range(len(atomList)):
-        centroidX += atomList[i].getX()
-        centroidY += atomList[i].getY()
-        centroidZ += atomList[i].getZ()
-
-    centroidX = centroidX / len(atomList)
-    centroidY = centroidY / len(atomList)
-    centroidZ = centroidZ / len(atomList)
-
-    centerX = floor(float(cubeSize) / 2.0)
-    centerY = floor(float(cubeSize) / 2.0)
-    centerZ = floor(float(cubeSize) / 2.0)
-
-    shiftX = centroidX - centerX
-    shiftY = centroidY - centerY
-    shiftZ = centroidZ - centerZ
-
-    for i in range(len(atomList)):
-        atomList[i].setX(round(atomList[i].getX() / pixelSize) + centerX)
-        atomList[i].setY(round(atomList[i].getY() / pixelSize) + centerY)
-        atomList[i].setZ(round(atomList[i].getZ() / pixelSize) + centerZ)
-
-    periodicTableAvailable = True
-    try:
-        # searching for periodic table library http://pypi.python.org/pypi/periodictable
-        from periodictable import elements
-    except ImportError:
-        periodicTableAvailable = False
-
-    for i in range(len(atomList)):
-        x = int(atomList[i].getX())
-        y = int(atomList[i].getY())
-        z = int(atomList[i].getZ())
-
-        if x >= cubeSize or y >= cubeSize or z >= cubeSize:
-            raise RuntimeError('Cube size is too small. Please specify a larger cube for PDB structure!')
-
-        currentValue = volume(x, y, z)
-
-        if periodicTableAvailable:
-            atomName = atomList[i].getAtomType()[0]
-            element = elements.symbol(atomName)
-            mass = element.mass
-            volume.setV(currentValue + mass, x, y, z)
-        else:
-            if atomList[i].getAtomType()[0] == 'H':  ##maybe take this out
-                volume.setV(currentValue + 1.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'C':
-                volume.setV(currentValue + 6.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'N':
-                volume.setV(currentValue + 7.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'O':
-                volume.setV(currentValue + 8.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'P':
-                volume.setV(currentValue + 15.0, x, y, z)
-            elif atomList[i].getAtomType()[0] == 'S':
-                volume.setV(currentValue + 16.0, x, y, z)
-
-    if densityNegative:
-        volume = volume * -1
-
-    return volume
-
-def cifpdb2em(inputPath, pixelSize, cubeSize=0.0, toCompact=False, chain=None, densityNegative=False, fname='', recenter=True):
+def cifpdb2em(inputPath, pixelSize, chain=None, fname=''):
     """
     cifpdb2em: Creates an volume out of a mmCIF file or pdb file
     @param inputPath: Path to mmCIF file 
     @param pixelSize: The pixel size to convert to 
     @param cubeSize: Resulting cube size
     @param toCompact: Option for compact cuboid
+    @param recenter: center the volume - default and only True supported.
+    @param densityNegartive: minus all the value - default and only False supported.
     @return: A volume
     """
     if inputPath.endswith(".pdb"):
         atomList = naivePDBParser(inputPath, chain)
-    else:
+    elif inputPath.endswith(".cif"):
         atomList = mmCIFParser(inputPath, chain)
-
-    compactX, compactY, compactZ = 0.0, 0.0, 0.0
-    if toCompact:
-        volm = atomList2emCube(atomList, pixelSize, densityNegative)
     else:
-        volm = atomList2em(atomList, pixelSize, cubeSize, densityNegative)
+        raise RuntimeError("cifpdb2em : Unsupported file format! ", inputPath)
 
-    if (not toCompact) and recenter:
-        volm = recenterVolume(volm, densityNegative)
+    # Default and only support toCompact : True. Automatically recenter.
+    volm = atomList2emCube(atomList, pixelSize, False) # densityNegartive : False.
     
-    if fname:
+    if fname: # if fname is given, write to disk.
         volm.write(fname)
-        print(f"MRC file is written in {fname}")
-    
+        print(f"cifpdb2em : MRC file {fname} is saved.")
     return volm
 
 def mrc2em(filename,destname):
@@ -243,3 +154,28 @@ def mrc2em(filename,destname):
         raise RuntimeError('MRC file not found! ',filename)
     emfile = read(filename)
     emfile.write(destname,'em')
+
+def volume2MRC(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False):
+    inputVolume = read(volPath)
+    x, y, z = inputVolume.sizeX(), inputVolume.sizeY(), inputVolume.sizeZ()
+    if verbose:
+        print(f"Volume dimension is initially... {x}x{y}x{z}")
+    
+    if floatMRC:
+        volumeData = np.zeros([x, y, z], dtype = np.float32)
+    else:
+        volumeData = np.zeros([x, y, z], dtype = np.int8)
+    
+    for i in range(inputVolume.sizeX()):
+        for j in range(inputVolume.sizeY()):
+            for k in range(inputVolume.sizeZ()):
+                #print(type(inputVolume.getV(i,j,k)))
+                try:
+                    volumeData[i,j,k] = inputVolume.getV(i,j,k)
+                except:
+                    pass
+    
+    with mrcfile.new(mrcPath, overwrite=overwrite) as mrc:
+        mrc.set_data(volumeData)
+        print(f"mrc data dimension is converted to... {mrc.data.shape}")
+    return
