@@ -27,6 +27,7 @@ This scripts are under development. Not optimized code.
 2. Direct Subtomo not from Grandmodel
 3. Subtomo percentage
 4. Grandmodel particle distribution(ratio)
+5. Normalization function!
 
 ### TODO2.
 1. Standalone...

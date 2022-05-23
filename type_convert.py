@@ -98,7 +98,7 @@ def atomList2emCube(atomList, pixelSize, densityNegative=False, resolutionFactor
             mass = element.mass
             if currentValue != 0:
                 overlap += 1
-            volumeCompact.setV(currentValue + mass, x, y, z)
+            volumeCompact.setV(currentValue + mass / pixelSize / pixelSize / pixelSize, x, y, z)
             
         else:
             if atomList[i].getAtomType()[0] == 'H':  ##maybe take this out

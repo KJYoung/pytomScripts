@@ -12,8 +12,9 @@ from type_convert import em2mrc, atomList2emCube, cifpdb2em, mrc2em, volume2MRC
 from utils import volumeOutliner, volumeListWriter, volObj2Numpy, newNumpyByXYZ, volumeResizer, makeCompact
 from pytomLib import recenterVolume, naivePDBParser, mmCIFParser, read, noiseApplier
 
-PYTOM = 1
-EMAN2 = 2
+PYTOM = 1 # PDB + CIF OK!
+EMAN2 = 2 # ONLY PDB file!
+SITUS = 3 # TOBEIMPLEMENTED(PDB only).
 
 rootDIR = "/cdata"
 pdbDataDIR = f"{rootDIR}/pdbData"
@@ -167,15 +168,20 @@ def wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=1, pdb2em=PYTOM, overwrit
         vol = cifpdb2em(Path, pixelSize=pixelSize, chain=None, fname=None)
     elif pdb2em == EMAN2:
         ## --omit OMIT : Randomly omit this percentage of atoms in the output map!
-        if resolution:
-            eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --res {resolution} --center"
+        if not Path.endswith(".pdb"):
+            print(f"Warning : EMAN2 pdb2mrc only supports pdb type. But, {pdbID} doesn't have pdb format file. PYTOM mode conversion will be executed.")
+            vol = cifpdb2em(Path, pixelSize=pixelSize, chain=None, fname=None)
         else:
-            eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --center"
-        print(f"Executing ... {eman2Command}")
-        os.system(eman2Command) # executing EMAN2
-        mrc2em(mrcPath, volumePath) # mrc2em
-        vol = read(volumePath) # em file to em object.
-        vol = volumeResizer(vol, pixelSize) # average resizer.
+            if resolution:
+                eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --res {resolution} --center"
+            else:
+                eman2Command = f"e2pdb2mrc.py {Path} {mrcPath} --apix 1 --center"
+            print(f"Executing ... {eman2Command}")
+            os.system(eman2Command) # executing EMAN2
+            mrc2em(mrcPath, volumePath) # mrc2em
+            vol = read(volumePath) # em file to em object.
+            vol = volumeResizer(vol, pixelSize) # average resizer.
+            vol = makeCompact(vol) # compact!
     return vol, resolution
 
 def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, pixelSize=1.0, pdb2em=PYTOM, overwrite=False):
@@ -359,7 +365,7 @@ def makeGrandModelByPDBIDs( pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioI
     # PDB IDs -> PDB files -> Volume(.em) List
     print("makeGrandModelByPDBIDs : 1. prepare volume object from the Internet. -----------")
     if newVolume:
-        volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, pdb2em=pdb2em, overwrite=True, verbose=True)
+        volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, pdb2em=pdb2em, overwrite=True)
         for pdbID, volume in zip(pdbIDList, volumes):
             volume.write(f"{volumeDir}/{pdbID}.em")
 
@@ -543,6 +549,8 @@ def subtomoDirectSaver(pdbIDList, volumesDir, subtomoIdentifier, subtomoDir, cro
 #  Main Code Workspace
 ##########################################################################################################################################################################
 SHREC2021_FULL = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2", "5mrc" ]
+SHREC2021_PDB  = [ "1s3x", "3qm1", "3gl1", "3h84", "2cg9", "3d2f", "1u6g", "3cf3", "1bxn", "1qvr", "4cr2" ]
+NT2C_PDB       = [ "2wrj", "1kd1", "5lzf", "1gr5" ]
 PDB2MRC_BENCHSET = [ "5fij" ]
 Repertoire = {
     "SHREC2021" : SHREC2021_FULL,
@@ -559,8 +567,10 @@ if __name__ == "__main__":
     DESCRIPTION = "6_5_EMAN merged"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
+    for id in NT2C_PDB:
+        wgetByPDBID(id, "/cdata/WrapperTEM/PDBs")
     # for test dataset 6. : EMAN2.
-    #particleNum = makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0411_crowd5(Max)", pixelSize=10, tomoSize=256, pfailedAttempts=200000, pparticleNum=9999999, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+    #particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0413(PDB)_crowd5(Max)", pixelSize=10, tomoSize=256, pfailedAttempts=200000, pparticleNum=9999999, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
     #print(particleNum)
     #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd4", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=50000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
     #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd3", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=30000, pparticleNum=2000, rotationStep=5, JSONCOMPACT=True, verbose=True)
@@ -574,8 +584,8 @@ if __name__ == "__main__":
     #for test in testSet5:
     #    subtomoSampleSaverCSV(test, "/cdata/scenario/", f"{test}_noise2.0", "/cdata/subtomo0405", 0, SNR=2.0, generateNum=20, subtomoSizeX=50)
     
-    volByEMAN2 = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByEMAN2", pixelSize=10, pdb2em=EMAN2, overwrite=True, verbose=True)
-    volByPytom = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByPyTom", pixelSize=10, pdb2em=PYTOM, overwrite=True, verbose=True)
+    #volByEMAN2 = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByEMAN2", pixelSize=10, pdb2em=EMAN2, overwrite=True)
+    #volByPytom = wgetPDB2Volume("1bxn", "/cdata/pdbData", "/cdata/emByPyTom", pixelSize=10, pdb2em=PYTOM, overwrite=True)
     
     #makeVolumeByPDBIDs(PDB2MRC_BENCHSET, "/cdata/pdbData", "/cdata/resolution4")
     #subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
