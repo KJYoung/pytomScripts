@@ -184,7 +184,7 @@ def wgetPDB2Volume(pdbID, pdbDir, volumeDir, pixelSize=1, pdb2em=PYTOM, overwrit
             vol = makeCompact(vol) # compact!
     return vol, resolution
 
-def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, pixelSize=1.0, pdb2em=PYTOM, overwrite=False):
+def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, pixelSize=1, pdb2em=PYTOM, overwrite=False):
     createdVolumes = []
     resolutionList = []
     for pdbID in pdbIDList:
@@ -349,7 +349,7 @@ def makeScenarioByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="
     else:
         return volume, class_mask, particleNum
 
-def makeVolumeByPDBIDs(pdbIDList, pdbDir, volumeDir, pixelSize=10.0):
+def makeVolumeByPDBIDs(pdbIDList, pdbDir, volumeDir, pixelSize=10):
    # PDB IDs -> PDB files -> Volume(.em) List
     print("makeVolumeByPDBIDs : prepare volume object from the Internet. -----------")
     volumes, _resolutions = prepareCubeVolumes(pdbIDList, pdbDir=pdbDir, pixelSize=pixelSize, volumeDir=volumeDir, overwrite=True)
@@ -357,7 +357,7 @@ def makeVolumeByPDBIDs(pdbIDList, pdbDir, volumeDir, pixelSize=10.0):
         volume.write(f"{volumeDir}/{pdbID}.em")
 
 def makeGrandModelByPDBIDs( pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="noname", withClassMask=True, 
-                            newVolume=True, pixelSize=10.0, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, rotationStep=0, 
+                            newVolume=True, pixelSize=10, tomoSize=128, pfailedAttempts=8000, pparticleNum=1500, rotationStep=0, 
                             pdb2em=PYTOM, JSONCOMPACT=True, verbose=False):
     targetPath = f"{scenarioDir}/{scenarioIdentifier}.em"
     targetVoxelOccupyPath = f"{scenarioDir}/{scenarioIdentifier}_voxelOccupy.txt"
@@ -564,14 +564,28 @@ if __name__ == "__main__":
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
     appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "6_5_EMAN merged"
+    DESCRIPTION = "7_TOMSIM revisited.."
     appendMetaDataln(f"===> {DESCRIPTION}")
 
-    for id in NT2C_PDB:
-        wgetByPDBID(id, "/cdata/WrapperTEM/PDBs")
-    # for test dataset 6. : EMAN2.
-    #particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0413(PDB)_crowd5(Max)", pixelSize=10, tomoSize=256, pfailedAttempts=200000, pparticleNum=9999999, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
-    #print(particleNum)
+    # for test dataset 7. : EMAN2 + various crowd level.
+    # test dataset 7 scenario generation. -------------
+    # particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523(PDB)_crowd6(Max)_EMAN2", pixelSize=10, tomoSize=256, pfailedAttempts=2000000, pparticleNum=9999999, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+    # print(particleNum)
+    # particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523(PDB)_crowd5_EMAN2", pixelSize=10, tomoSize=256, pfailedAttempts=300000, pparticleNum=9999999, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+    # particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523_crowd4", pixelSize=10, tomoSize=256, pfailedAttempts=250000, pparticleNum=10000, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+    # particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523_crowd3", pixelSize=10, tomoSize=256, pfailedAttempts=250000, pparticleNum=4000, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+    # particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523_crowd2", pixelSize=10, tomoSize=256, pfailedAttempts=250000, pparticleNum=1500, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+    # particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523_crowd1", pixelSize=10, tomoSize=256, pfailedAttempts=250000, pparticleNum=600, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+    # volume2MRC("/cdata/scenario/0523(PDB)_crowd6(Max)_EMAN2.em", "/cdata/scenario/0523(PDB)_crowd6(Max)_EMAN2.mrc", floatMRC=True, overwrite=False, verbose=True)
+    # volume2MRC("/cdata/scenario/0523(PDB)_crowd5(Max)_EMAN2.em", "/cdata/scenario/0523(PDB)_crowd5(Max)_EMAN2.mrc", floatMRC=True, overwrite=False, verbose=True)
+    # volume2MRC("/cdata/scenario/0523_crowd4.em", "/cdata/scenario/0523_crowd4.mrc", floatMRC=True, overwrite=False, verbose=True)
+    # volume2MRC("/cdata/scenario/0523_crowd3.em", "/cdata/scenario/0523_crowd3.mrc", floatMRC=True, overwrite=False, verbose=True)
+    # volume2MRC("/cdata/scenario/0523_crowd2.em", "/cdata/scenario/0523_crowd2.mrc", floatMRC=True, overwrite=False, verbose=True)
+    # volume2MRC("/cdata/scenario/0523_crowd1.em", "/cdata/scenario/0523_crowd1.mrc", floatMRC=True, overwrite=False, verbose=True)
+    # Generate subtomo from those template scenario.
+    print("Generating subtomograms..")
+
+    
     #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd4", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=50000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
     #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd3", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=30000, pparticleNum=2000, rotationStep=5, JSONCOMPACT=True, verbose=True)
     #makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd2", newVolume=False, pixelSize=10, tomoSize=256, pfailedAttempts=20000, pparticleNum=1000, rotationStep=5, JSONCOMPACT=True, verbose=True)

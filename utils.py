@@ -11,8 +11,6 @@ import math
 ## def volumeOutliner(inputVolumes, isFile=False, outlineValue=10)
 # volumeListWriter
 ## def volumeListWriter(inputVolumes, outputDir, Description, JSON=None)
-# volume2MRC
-## def volume2MRC(volPath, mrcPath, floatMRC=False, overwrite=False, verbose=False)
 # volObj2Numpy
 ## def volObj2Numpy(inputVolume, floatMRC=False)
 # newNumpyByXYZ

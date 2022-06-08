@@ -28,6 +28,11 @@ makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "
 subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_wonoise_5", "/cdata/subtomo", 0, SNR=-1, generateNum=15, subtomoSizeX=50)
 subtomoSampleSaver("0328_compact10pV", "/cdata/scenario", "0329_noise2.0_5", "/cdata/subtomo", 0, SNR=2.0, generateNum=15, subtomoSizeX=50)
 
+# for test dataset 4.2 : same as v4. : 05/23.
+makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0523_compact10pV4", pixelSize=10, tomoSize=256, pfailedAttempts=10000, pparticleNum=3000, rotationStep=5, JSONCOMPACT=True, verbose=True)
+subtomoSampleSaver("0523_compact10pV4", "/cdata/scenario", "0523_wonoise", "/cdata/subtomo", 0, SNR=-1, generateNum=100, subtomoSizeX=50)
+subtomoSampleSaver("0523_compact10pV4", "/cdata/scenario", "0523_SNR_2.0", "/cdata/subtomo", 0, SNR=2.0, generateNum=100, subtomoSizeX=50)
+
 # for test dataset 5. : same.
 makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd7(Max)", pixelSize=10.0, tomoSize=256, pfailedAttempts=200000, pparticleNum=15000, rotationStep=5, JSONCOMPACT=True, verbose=True)
 makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "/cdata/scenario", "0405_crowd6", newVolume=False, pixelSize=10.0, tomoSize=256, pfailedAttempts=200000, pparticleNum=10000, rotationStep=5, JSONCOMPACT=True, verbose=True)

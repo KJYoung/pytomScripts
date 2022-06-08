@@ -6,6 +6,8 @@
 # volume2mrc
 from pytom_volume import vol
 from pytomLib import recenterVolume, naivePDBParser, mmCIFParser, read
+import numpy as np
+import mrcfile
 
 def em2mrc(filename,newfilename):
     # Not USED : incompatible with mrcfile

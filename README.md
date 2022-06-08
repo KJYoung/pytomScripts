@@ -20,6 +20,7 @@ This scripts are under development. Not optimized code.
 8. Dimension adjustment   
 9. Subtomogram generator   
 10. EMAN2-based mrc converter merged   
+11. MRC fragment module   
 
 ### TODO1.
 1. EMDB not PDB
@@ -44,3 +45,4 @@ This scripts are under development. Not optimized code.
 20220321 16:00 - (Until today) Subtomogram generator, Metadata writer.   
 20220402 04:00 - (Until today) mrc output. dimension adjustment.   
 20220411 23:00 - (Until today) EMAN2 merged. volumeResizer(with average mode). Server Test.
+20220608 15:40 - Fragment MRC
