@@ -1,0 +1,7 @@
+*.pyc
+example/*
+input/*
+output/*
+results/*
+textures/*
+.DS_Store
