@@ -47,4 +47,4 @@ This scripts are under development. Not optimized code.
 20220402 04:00 - mrc output. dimension adjustment.   
 20220411 23:00 - EMAN2 merged. volumeResizer(with average mode). Server Test.   
 20220608 16:50 - Fragment MRC + Merge MRC.   
-20220623 17:20 - Gaussian noise applier
+20220623 17:20 - Gaussian noise applier   

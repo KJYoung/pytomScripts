@@ -71,15 +71,13 @@ if __name__ == '__main__':
     mrcStd          = np.std(mrcNumpy)
     print("input mrc file's avg {} and std {}".format(mrcAvg, mrcStd))
     #gaussianNoise = torch.normal(0,1, size=(size, size))
-    gaussianNoise   = np.random.normal(size=(size, size))
+    gaussianNoise   = np.random.normal(loc=mrcAvg, scale=10 * mrcStd, size=(size, size))
     applied_patch   = applier_Adder(mrcNumpy, gaussianNoise).astype(np.float32)
 
-    with mrcfile.new("test.mrc", overwrite=True) as mergedMRC:
+    with mrcfile.new("v2_add(mu,10std).mrc", overwrite=True) as mergedMRC:
         mergedMRC.set_data(applied_patch)
-    torchvision.utils.save_image(torch.from_numpy(applied_patch), "test.png")
-    print("saved to test.png")
-    
-    
+    # torchvision.utils.save_image(torch.from_numpy(applied_patch), "test.png")
+    print("saved to mrc")
     
     # assert False
     # withError, args = parse_args()
