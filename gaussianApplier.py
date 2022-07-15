@@ -47,9 +47,9 @@ if __name__ == '__main__':
         input_list=os.listdir(args.input)
 
         avgTime = None
-        for inputNum, inputName in enumerate(input_list):
+        for inputNum, inputName in enumerate(input_list, start=1):
             file_start = time.time()
-            print("Job#{} on {}".format(inputNum+1, inputName))
+            print("Job#{} on {}".format(inputNum, inputName))
             with mrcfile.open(args.input + inputName) as mrcPatch:
                 mrcNumpy = mrcPatch.data        # (1, Size, Size)
             size     = mrcNumpy.shape[1]    # Size
@@ -76,9 +76,9 @@ if __name__ == '__main__':
             if avgTime == None:
                 avgTime = file_end - file_start
             else:
-                avgTime = (file_end - script_start) / (inputNum + 1)
-            print("-- Elapsed time for this script : {} // ETA : {}".format(time.time() - file_start, avgTime * (len(input_list) - inputNum - 1)))
-        print("Elapsed time for this script : {}".format(time.time() - script_start))
-        print("------------ Gaussian Noise Applier ended... ------------")
+                avgTime = (file_end - script_start) / (inputNum)
+            print('# gaussApplier : [{}/{}] {:.2%} | ETA : {}'.format(inputNum, len(input_list), inputNum/len(input_list), avgTime * (len(input_list) - inputNum)), file=sys.stderr, end='\r')
+        print("Total elapsed time for gaussApplier : {}".format(time.time() - script_start))
 
 # python /cdata/workspace/gaussianApplier.py -i /cdata/WrapperTEM/Micrographs/clean4/ -o /cdata/db1/tempGauss/ -a 2 --std 10
+# python /cdata/workspace/gaussianApplier.py -i /cdata/tomsimDIR/0714_EMAN2_2wrj_cleanMRC -o /cdata/tomsimDIR/0714_EMAN2_2wrj_gaussMRC -a 2 --std 10

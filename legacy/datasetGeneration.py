@@ -48,3 +48,20 @@ makeGrandModelByPDBIDs(SHREC2021_FULL, "/cdata/pdbData", "/cdata/resolution4", "
 testSet5 = [ "0405_crowd7(Max)", "0405_crowd6", "0405_crowd5", "0405_crowd4", "0405_crowd3", "0405_crowd2", "0405_crowd1(Min)", "0405_hypocrowd4", "0405_hypocrowd3", "0405_hypocrowd2", "0405_hypocrowd1" ]
 for test in testSet5:
     subtomoSampleSaverCSV(test, "/cdata/scenario/", f"{test}_noise2.0", "/cdata/subtomo0405", 0, SNR=2.0, generateNum=20, subtomoSizeX=50)
+
+
+# for test dataset 7. : EMAN2 + various crowd level.
+test dataset 7 scenario generation. -------------
+particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523(PDB)_crowd6(Max)_EMAN2", pixelSize=10, tomoSize=256, pfailedAttempts=2000000, pparticleNum=9999999, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+print(particleNum)
+particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523(PDB)_crowd5_EMAN2", pixelSize=10, tomoSize=256, pfailedAttempts=300000, pparticleNum=9999999, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523_crowd4", pixelSize=10, tomoSize=256, pfailedAttempts=250000, pparticleNum=10000, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523_crowd3", pixelSize=10, tomoSize=256, pfailedAttempts=250000, pparticleNum=4000, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523_crowd2", pixelSize=10, tomoSize=256, pfailedAttempts=250000, pparticleNum=1500, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+particleNum = makeGrandModelByPDBIDs(SHREC2021_PDB, "/cdata/pdbData", "/cdata/emByEMAN2", "/cdata/scenario", "0523_crowd1", pixelSize=10, tomoSize=256, pfailedAttempts=250000, pparticleNum=600, rotationStep=5, pdb2em=EMAN2, JSONCOMPACT=True, verbose=True)
+volume2MRC("/cdata/scenario/0523(PDB)_crowd6(Max)_EMAN2.em", "/cdata/scenario/0523(PDB)_crowd6(Max)_EMAN2.mrc", floatMRC=True, overwrite=False, verbose=True)
+volume2MRC("/cdata/scenario/0523(PDB)_crowd5(Max)_EMAN2.em", "/cdata/scenario/0523(PDB)_crowd5(Max)_EMAN2.mrc", floatMRC=True, overwrite=False, verbose=True)
+volume2MRC("/cdata/scenario/0523_crowd4.em", "/cdata/scenario/0523_crowd4.mrc", floatMRC=True, overwrite=False, verbose=True)
+volume2MRC("/cdata/scenario/0523_crowd3.em", "/cdata/scenario/0523_crowd3.mrc", floatMRC=True, overwrite=False, verbose=True)
+volume2MRC("/cdata/scenario/0523_crowd2.em", "/cdata/scenario/0523_crowd2.mrc", floatMRC=True, overwrite=False, verbose=True)
+volume2MRC("/cdata/scenario/0523_crowd1.em", "/cdata/scenario/0523_crowd1.mrc", floatMRC=True, overwrite=False, verbose=True)
