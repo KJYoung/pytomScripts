@@ -1,6 +1,7 @@
 import argparse,os,time,mrcfile
 import numpy as np
 from os.path import exists
+import sys
 
 # Parsing arguments
 def parse_args():
@@ -42,14 +43,13 @@ if __name__ == '__main__':
     if withError:
         pass
     else:
-        print("------------ Gaussian Noise Applier started... ------------")
         script_start = time.time()
         input_list=os.listdir(args.input)
 
         avgTime = None
         for inputNum, inputName in enumerate(input_list, start=1):
             file_start = time.time()
-            print("Job#{} on {}".format(inputNum, inputName))
+            # print("Job#{} on {}".format(inputNum, inputName))
             with mrcfile.open(args.input + inputName) as mrcPatch:
                 mrcNumpy = mrcPatch.data        # (1, Size, Size)
             size     = mrcNumpy.shape[1]    # Size

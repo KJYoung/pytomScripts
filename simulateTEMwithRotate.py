@@ -136,7 +136,7 @@ def em2mrc2norm2em(emPath, outPath, mrcPath, floatMRC=True, overwrite=True):
     std = np.std(volumeData)
     print(f" average : {average}, std : {std}")
     
-    volumeData = (volumeData - average ) / std
+    volumeData = (volumeData - average ) / 100 * std + 1
     average = np.average(volumeData)
     std = np.std(volumeData)
     print(f" average : {average}, std : {std}")
@@ -203,7 +203,7 @@ def prepareCubeVolumes(pdbIDList, pdbDir, volumeDir, pixelSize=1, pdb2em=PYTOM, 
 ##########################################################################################################################################################################
 #  Section for Multi particle scenario.
 ##########################################################################################################################################################################
-def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", toSave=True, withClassMask=False, imageSize=128, pfailedAttempts=9000, pparticleNum=1600, verbose=False):
+def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="noname", toSave=True, withClassMask=False, imageSize=128, pfailedAttempts=9000, pparticleNum=1600, rotationStep=0, verbose=False):
     # cuboidalOccupancyList = [['3gl1', [46, 32, 38]], ['3h84', [39, 32, 37]], ['2cg9', [41, 34, 27]], ['3d2f', [34, 69, 67]], ['1u6g', [31, 36, 44]], ['3cf3', [25, 36, 21]], ['1bxn', [44, 44, 36]], ['1qvr', [45, 41, 54]]]
     startTime = time.time()
     scenarioMetaDataFile = f"{scenarioDir}/{scenarioIdentifier}.txt"
@@ -219,7 +219,7 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
     f = open(scenarioMetaDataFile, 'w')
     f.write("PDBID,centerX,centerY,phi,theta,psi\n")
     volume = vol(1, imageSize, imageSize)
-    volume.setAll(1.0)
+    volume.setAll(0.0)
 
     volumeTemplateList = []
     for pdbid in pdbIDList:
@@ -238,7 +238,10 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
     currentVol = volumeTemplateList[classNum]
 
     # Rotate the particle.
-    rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
+    if rotationStep != 0:
+        rotatedVol, phi, theta, psi = compactRandomRotation(currentVol, rotationStep=rotationStep)
+    else:
+        rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
     # rotatedVol : rotated particle volume.
 
     sizeX, sizeY, sizeZ = rotatedVol.sizeX(), rotatedVol.sizeY(), rotatedVol.sizeZ()
@@ -256,8 +259,7 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
         for j in range(sizeZ):
                 curVal = rotatedVol.getV(xProjectionHeight, i, j)
                 if curVal != 0.0:
-                    curVal = np.random.normal(loc=0.0, scale=0.02)
-                    volume.setV( curVal + 1.0 , 0, y+i, z+j)
+                    volume.setV( curVal , 0, y+i, z+j)
                     minmaxUpdate(minCoord, maxCoord, [ y+i, z+j ])
 
                     if withClassMask:
@@ -280,11 +282,22 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
 
         if verbose and failedAttempts%2000 == 0 and failedAttempts != 0:
             print(f"... Now failed Attemps are {failedAttempts}")   
-        
-        classNum = np.random.randint(low=0, high=len(pdbIDList))
-        currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
-        currentVol = read(currentTemplate)
-        rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
+        if rotationStep != 0:
+            if rotFailNum == 20:
+                rotatedVol = None
+            if rotatedVol == None:
+                rotFailNum = 0
+                classNum = np.random.randint(low=0, high=len(pdbIDList)) #TODO NUMPY.
+                currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
+                currentVol = read(currentTemplate)
+                rotatedVol, phi, theta, psi = compactRandomRotation(currentVol)
+            else:
+                rotFailNum+=1
+        else:
+            classNum = np.random.randint(low=0, high=len(pdbIDList))
+            currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
+            currentVol = read(currentTemplate)
+            rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
 
         sizeX, sizeY, sizeZ = rotatedVol.sizeX(), rotatedVol.sizeY(), rotatedVol.sizeZ()
         xProjectionHeight   = np.random.randint(low=0, high=sizeX) # [low, high)
@@ -304,8 +317,7 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
                 for j in range(sizeZ):
                         curVal = rotatedVol.getV(xProjectionHeight, i, j)
                         if curVal != 0: # TODO
-                            curVal = np.random.normal(loc=0.0, scale=0.02)
-                            volume.setV( curVal + 1.0, 0, y+i, z+j)
+                            volume.setV( curVal, 0, y+i, z+j)
                             minmaxUpdate(minCoord, maxCoord, [ y+i, z+j ])
                             if withClassMask:
                                 class_mask.setV( classNum + 1, 0, y+i, z+j)
@@ -365,6 +377,18 @@ def simulateTEM( pdbIDList, pdbDir, volumeDir, scenarioDir, scenarioIdentifier="
     class_mask.write(maskPath)
     return particleNum
 ##########################################################################################################################################################################
+#  Section for Simulation.
+def compactRandomRotation(inputVolume, rotationStep = 1, toSave = False):
+    #phi, theta, psi = np.random.randint(low=0, high=360, size=(3,)) # High exclusive
+    phi, theta, psi = random.randrange(0, 359, rotationStep),random.randrange(0, 359, rotationStep),random.randrange(0, 359, rotationStep) # High inclusive. For step.
+    from pytom_volume import rotate
+    rotatedVolume = vol(inputVolume.sizeX(),inputVolume.sizeY(),inputVolume.sizeZ())
+    rotatedVolume.setAll(0.0)
+    rotate(inputVolume, rotatedVolume, int(phi), int(theta), int(psi))
+    comp = makeCompact(rotatedVolume)
+    return comp, phi, theta, psi
+
+##########################################################################################################################################################################
 #  Main Code Workspace
 ##########################################################################################################################################################################
 if __name__ == "__main__":
@@ -378,18 +402,18 @@ if __name__ == "__main__":
     appendMetaDataln(f"===> {DESCRIPTION}")
 
     # generate emByEMAN2/2wrj_norm2.em ,mrc.
-    # em2mrc2norm2em("/cdata/tomsimDIR/emByEMAN2/2wrj.em", "/cdata/tomsimDIR/emByEMAN2/2wrj_norm3.em", "/cdata/tomsimDIR/emByEMAN2/2wrj_norm3.mrc", floatMRC=True, overwrite=True)
+    # em2mrc2norm2em("/cdata/tomsimDIR/emByEMAN2/2wrj.em", "/cdata/tomsimDIR/emByEMAN2/2wrj_norm2.em", "/cdata/tomsimDIR/emByEMAN2/2wrj_norm2.mrc", floatMRC=True, overwrite=True)
     
     # simulateTEM(["2wrj"], "/cdata/tomsimDIR/pdbData", "/cdata/tomsimDIR/emByEMAN2", "/cdata/tomsimDIR/scenario", "null", pixelSize=2, imageSize=4096, pfailedAttempts=0, pparticleNum=0, rotationStep=0, pdb2em=EMAN2, verbose=True)
-    if True:
-        print("start simulation")
-        for num in range(250):
-            identifier = f"0717_EMAN2_gauss_{num}"
-            pNum = np.random.randint(low=60, high=120)
-            makeImageByPDBIDs(["2wrj"], "/cdata/tomsimDIR/emByEMAN2", toSave=True, withClassMask=False, scenarioDir="/cdata/tomsimDIR/scenario", scenarioIdentifier=identifier, imageSize=4096, pfailedAttempts=50, pparticleNum=pNum, verbose=True)
-            volume2MRC(f"/cdata/tomsimDIR/scenario/{identifier}.em", f"/cdata/tomsimDIR/scenario/{identifier}.mrc", floatMRC=True, overwrite=False, verbose=True)
-            num2 = num+1
-            print("{}/250".format(num2), file=sys.stderr, end='\r')
+    
+    print("makeGrandModelByPDBIDs : 2. make grandmodel. -----------------------------------")
+    for num in range(250):
+        identifier = f"0714_EMAN2_2wrj_{num}"
+        pNum = np.random.randint(low=60, high=120)
+        makeImageByPDBIDs(["2wrj"], "/cdata/tomsimDIR/emByEMAN2", toSave=True, withClassMask=False, scenarioDir="/cdata/tomsimDIR/scenario", scenarioIdentifier=identifier, imageSize=4096, pfailedAttempts=50, pparticleNum=pNum, rotationStep=5, verbose=True)
+        volume2MRC(f"/cdata/tomsimDIR/scenario/{identifier}.em", f"/cdata/tomsimDIR/scenario/{identifier}.mrc", floatMRC=True, overwrite=False, verbose=True)
+        num2 = num+1
+        print("{}/250".format(num2), file=sys.stderr, end='\r')
     # print(particleNum)
     # for test dataset 7. : EMAN2 + various crowd level.
     # test dataset 7 scenario generation. -------------
