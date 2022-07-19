@@ -216,11 +216,15 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
     jsonMetadataObject["pdbIDs"] = pdbIDList
     jsonMetadataObject["particles"] = []
 
-    f = open(scenarioMetaDataFile, 'w')
-    f.write("PDBID,centerX,centerY,phi,theta,psi\n")
+    # f = open(scenarioMetaDataFile, 'w')
+    # f.write("PDBID,centerX,centerY,phi,theta,psi\n")
     volume = vol(1, imageSize, imageSize)
     volume.setAll(1.0)
 
+    for i in range(imageSize):
+        for j in range(imageSize):
+            volume.setV( 1.0 + np.random.normal(loc=0.0, scale=1e-6), 0, i, j)
+    
     volumeTemplateList = []
     for pdbid in pdbIDList:
         currentTemplate = f"{volumeDir}/{pdbid}.em"
@@ -238,8 +242,7 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
     currentVol = volumeTemplateList[classNum]
 
     # Rotate the particle.
-    rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
-    # rotatedVol : rotated particle volume.
+    rotatedVol = currentVol
 
     sizeX, sizeY, sizeZ = rotatedVol.sizeX(), rotatedVol.sizeY(), rotatedVol.sizeZ()
     xProjectionHeight   = np.random.randint(low=0, high=sizeX) # [low, high)
@@ -267,8 +270,7 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
     jsonMetadataObject["particles"].append( { "classNum" : classNum, "min" : minCoord, "max" : maxCoord } )
 
     # INCORPORTATE
-    f.write(f"{pdbIDList[classNum]},{centerY},{centerZ},{phi},{theta},{psi}\n")
-    rotatedVol = None
+    # f.write(f"{pdbIDList[classNum]},{centerY},{centerZ}\n")
     rotFailNum = 0
 
     failedAttempts = 0
@@ -284,7 +286,7 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
         classNum = np.random.randint(low=0, high=len(pdbIDList))
         currentTemplate = f"{volumeDir}/{pdbIDList[classNum]}.em"
         currentVol = read(currentTemplate)
-        rotatedVol, phi, theta, psi = currentVol, 0, 0, 0
+        rotatedVol = currentVol
 
         sizeX, sizeY, sizeZ = rotatedVol.sizeX(), rotatedVol.sizeY(), rotatedVol.sizeZ()
         xProjectionHeight   = np.random.randint(low=0, high=sizeX) # [low, high)
@@ -313,11 +315,10 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
     
             jsonMetadataObject["particles"].append( { "classNum" : classNum, "min" : minCoord, "max" : maxCoord } )
             particleNum+=1
-            rotatedVol = None
-            f.write(f"{pdbIDList[classNum]},{centerY},{centerZ},{phi},{theta},{psi}\n")
+            # f.write(f"{pdbIDList[classNum]},{centerY},{centerZ}\n")
             if verbose and particleNum % 500 == 0:
                 print(f"... Particle Num : {particleNum}")  
-    f.close()
+    # f.close()
 
     with open(scenarioJsonFile, "w") as json_file:
         json.dump(jsonMetadataObject, json_file)
@@ -335,6 +336,120 @@ def makeImageByPDBIDs(pdbIDList, volumeDir, scenarioDir, scenarioIdentifier="non
         volume.write(scenarioVolumeFile)
         if withClassMask:
             class_mask.write(classmaskFile)
+    return volume, class_mask, particleNum
+def simulateByTemplate(templatePath, scenarioDir, scenarioIdentifier="noname", toSave=True, withClassMask=False, imageSize=128, pfailedAttempts=9000, pparticleNum=160, verbose=False):
+    startTime = time.time()
+    scenarioMetaDataFile = f"{scenarioDir}/{scenarioIdentifier}.txt"
+    scenarioJsonFile = f"{scenarioDir}/{scenarioIdentifier}.json"
+    scenarioVolumeFile = f"{scenarioDir}/{scenarioIdentifier}.mrc"
+    classmaskFile = f"{scenarioDir}/{scenarioIdentifier}_class_mask.em"
+
+    jsonMetadataObject = getMedadataJsonTemplate()
+    jsonMetadataObject["header"] = f"{10.0} A/voxel, without Noise"
+    jsonMetadataObject["particles"] = []
+
+    volume = np.random.normal(loc=1.0, scale=1e-6, size=(1, imageSize, imageSize)).astype('float32')
+
+    template = mrcfile.open(templatePath).data
+
+    if withClassMask:
+        class_mask = vol(1, imageSize, imageSize)
+        class_mask.setAll(0)
+    else:
+        class_mask = None
+    
+    scenario = []
+
+    currentVol = template
+
+    # print(currentVol.shape)
+    sizeY, sizeZ = currentVol.shape
+
+    y, z = np.random.randint(low=0, high=imageSize-sizeY), np.random.randint(low=0, high=imageSize-sizeZ)
+    centerY, centerZ = y+ sizeY/2, z+ sizeZ/2
+    
+    scenario.append([[y,z], [y+sizeY-1, z+sizeZ-1]])
+
+    occupyVoxels = []
+    minCoord = [ 4*imageSize, 4*imageSize ]
+    maxCoord = [ -1, -1 ]
+
+    volume[0, y:y+sizeY, z:z+sizeZ] = currentVol
+    # for i in range(sizeY):
+    #     for j in range(sizeZ):
+    #             curVal = rotatedVol.getV(xProjectionHeight, i, j)
+    #             if curVal != 0.0:
+    #                 curVal = np.random.normal(loc=0.0, scale=0.02)
+    #                 volume.setV( curVal + 1.0 , 0, y+i, z+j)
+    #                 minmaxUpdate(minCoord, maxCoord, [ y+i, z+j ])
+
+    #                 if withClassMask:
+    #                     class_mask.setV( classNum + 1, 0, y+i, z+j)
+    #                 occupyVoxels.append( [ y+i, z+j ] )
+    # jsonMetadataObject["particles"].append( { "classNum" : classNum, "min" : minCoord, "max" : maxCoord } )
+
+    # INCORPORTATE
+    # f.write(f"{pdbIDList[classNum]},{centerY},{centerZ}\n")
+
+    failedAttempts = 0
+    particleNum = 1
+    while failedAttempts < pfailedAttempts and particleNum < pparticleNum:
+        occupyVoxels = []
+        minCoord = [ 4*imageSize, 4*imageSize ]
+        maxCoord = [ -1, -1 ]
+
+        if verbose and failedAttempts%2000 == 0 and failedAttempts != 0:
+            print(f"... Now failed Attemps are {failedAttempts}")   
+
+        sizeY, sizeZ = currentVol.shape
+        y, z = np.random.randint(low=0, high=imageSize-sizeY), np.random.randint(low=0, high=imageSize-sizeZ)
+        centerY, centerZ = y+ sizeY/2, z+ sizeZ/2
+        
+        isOccupied = False
+        for existingItem in scenario:
+            if (y <= existingItem[1][0] and y+sizeY >= existingItem[0][0]) and (z <= existingItem[1][1] and z+sizeZ >= existingItem[0][1]):
+                # print(f"Failed {failedAttempts} : {y}<={existingItem[1][0]} and {y}+{sizeY} >= {existingItem[0][0]}) and ({z} <= {existingItem[1][1]} and {z}+{sizeZ} >= {existingItem[0][1]})")
+                failedAttempts+=1
+                isOccupied = True
+                break; 
+        if isOccupied == False:
+            scenario.append([[y, z], [y+sizeY-1, z+sizeZ-1]])
+            volume[0, y:y+sizeY, z:z+sizeZ] = currentVol
+            # for i in range(sizeY):
+            #     for j in range(sizeZ):
+            #             curVal = rotatedVol.getV(xProjectionHeight, i, j)
+            #             if curVal != 0: # TODO
+            #                 curVal = np.random.normal(loc=0.0, scale=0.02)
+            #                 volume.setV( curVal + 1.0, 0, y+i, z+j)
+            #                 minmaxUpdate(minCoord, maxCoord, [ y+i, z+j ])
+            #                 if withClassMask:
+            #                     class_mask.setV( classNum + 1, 0, y+i, z+j)
+            #                 occupyVoxels.append( [ y+i, z+j ] )
+    
+            # jsonMetadataObject["particles"].append( { "classNum" : classNum, "min" : minCoord, "max" : maxCoord } )
+            particleNum+=1
+            # f.write(f"{pdbIDList[classNum]},{centerY},{centerZ}\n")
+            if verbose and particleNum % 500 == 0:
+                print(f"... Particle Num : {particleNum}")  
+    # f.close()
+
+    with open(scenarioJsonFile, "w") as json_file:
+        json.dump(jsonMetadataObject, json_file)
+    
+    # --- META DATA ---
+    appendMetaDataln(f"makeScenarioByPDBIDs {scenarioIdentifier} done - time elapsed : {time.time() - startTime}s")
+    appendMetaDataln(f"-output file : {scenarioVolumeFile}, imageSize : {imageSize}x{imageSize}")
+    appendMetaDataln(f"-Parameter - pfailedAttempts : {pfailedAttempts}, pParticleNum : {pparticleNum}")
+    appendMetaDataln(f"-Result - failedAttempts : {failedAttempts}, resultParticleNum : {particleNum}")
+
+    print(f"----------- Scenario generation is done... with Particle Number {particleNum}----------")
+    # -----------------
+    if toSave:
+        with mrcfile.new(scenarioVolumeFile) as mrc:
+            mrc.set_data(volume)
+        # volume.write(scenarioVolumeFile)
+        # if withClassMask:
+        #     class_mask.write(classmaskFile)
     return volume, class_mask, particleNum
     
 def makeVolumeByPDBIDs(pdbIDList, pdbDir, volumeDir, pixelSize=10):
@@ -374,7 +489,7 @@ if __name__ == "__main__":
     programTime = f"{now.tm_year}/{now.tm_mon}/{now.tm_mday} {now.tm_hour}:{now.tm_min}:{now.tm_sec}"
     appendMetaDataln(f"===> Scripts running : {programTime}")
     # Put some description.
-    DESCRIPTION = "8_InsilicoTEM replace?"
+    DESCRIPTION = "9_TomsimGauss V3 : Background gaussian"
     appendMetaDataln(f"===> {DESCRIPTION}")
 
     # generate emByEMAN2/2wrj_norm2.em ,mrc.
@@ -384,10 +499,11 @@ if __name__ == "__main__":
     if True:
         print("start simulation")
         for num in range(250):
-            identifier = f"0717_EMAN2_gauss_{num}"
+            identifier = f"0719_gaussV3_{num}"
             pNum = np.random.randint(low=60, high=120)
-            makeImageByPDBIDs(["2wrj"], "/cdata/tomsimDIR/emByEMAN2", toSave=True, withClassMask=False, scenarioDir="/cdata/tomsimDIR/scenario", scenarioIdentifier=identifier, imageSize=4096, pfailedAttempts=50, pparticleNum=pNum, verbose=True)
-            volume2MRC(f"/cdata/tomsimDIR/scenario/{identifier}.em", f"/cdata/tomsimDIR/scenario/{identifier}.mrc", floatMRC=True, overwrite=False, verbose=True)
+            simulateByTemplate("/cdata/workspace/template/cropForParticle5lzfV3_sig.mrc", "/cdata/tomsimDIR/scenario", scenarioIdentifier=identifier, toSave=True, withClassMask=False, imageSize=4096, pfailedAttempts=50, pparticleNum=pNum, verbose=True)
+            # makeImageByPDBIDs(["2wrj"], "/cdata/tomsimDIR/emByEMAN2", toSave=True, withClassMask=False, scenarioDir="/cdata/tomsimDIR/scenario", scenarioIdentifier=identifier, imageSize=4096, pfailedAttempts=50, pparticleNum=pNum, verbose=True)
+            # volume2MRC(f"/cdata/tomsimDIR/scenario/{identifier}.em", f"/cdata/tomsimDIR/scenario/{identifier}.mrc", floatMRC=True, overwrite=False, verbose=True)
             num2 = num+1
             print("{}/250".format(num2), file=sys.stderr, end='\r')
     # print(particleNum)
