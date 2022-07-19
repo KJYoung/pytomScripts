@@ -13,6 +13,7 @@ for i in input_list:
         command = "cp {}{} {}{}".format(srcDir, srcName, dstDir, dstName)
         os.system(command)
     print("Jobs for {}".format(srcName))
+    # print('# bulkRenamer : [{}/{}] {:.2%}'.format(i, len(input_list), i/len(input_list)), file=sys.stderr, end='\r')
 print("All jobs done.")
 
 # python /cdata/workspace/bulkRenamer.py /cdata/db1/size512/fragments/clean4 /cdata/db1/size512/fragments/cleanPair 2
